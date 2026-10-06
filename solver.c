@@ -1,4 +1,5 @@
 // Version 1 - 2026/09/30: Replace the BFS table-based solver with Depth-Limited DFS
+// Version 2 - 2026/09/30: Add IDDFS with same-face move pruning
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -328,7 +329,7 @@ static uint8_t solution_depth;
 static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit){
     //1. sloved?
     if(rank_state(&state) == 0){
-        solution_depth = depth; //找到答案時，記錄用了幾步
+        solution_depth = depth; //★ 找到答案時，記錄用了幾步
         return 1;
     }
     //2. depth limit reached?
@@ -337,6 +338,12 @@ static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit){
     }
     //3. try 9 moves
     for(uint8_t move = 0; move < MOVES; ++move){
+        /* version2: IDDFS and move pruning add begin */
+        if (depth > 0 &&
+            move / 3 == path[depth - 1] / 3) {
+            continue;
+        }
+        /* version2: IDDFS and move pruning add end */
         state_t next = apply_move(state, move); //把「move 編號 0~8」轉成：哪個面 + 做幾次 quarter turn
         path[depth] = move;
         // 繼續往下一層搜尋
@@ -401,8 +408,29 @@ int main(int argc, char **argv)
     */
 
     /* version1: Depth-Limited DFS add begin */
-    uint8_t limit = 11; //暫時設定
+    //uint8_t limit = 11; /* version2: IDDFS and move pruning mark */
+    int found = 0; /* version2: IDDFS and move pruning add */
     const char *separator = "";
+
+    /* version2: IDDFS and move pruning add begin */
+    for(uint8_t limit = 0; limit <= 11; ++limit){ // 從 0 一直試到 11
+        if(depth_limit_dfs(state, 0, limit)){
+            for(uint8_t i = 0; i < solution_depth; ++i){
+                printf("%s%s", separator, move_names[path[i]]);
+                separator = " ";
+            }
+            putchar('\n');
+            found = 1;
+            break;
+        }
+    }
+    if(found==0){
+        puts("not found");
+    }
+    /* version2: IDDFS and move pruning add end */
+
+    /* version2: IDDFS and move pruning mark */
+    /*
     if(depth_limit_dfs(state, 0, limit)){
         for(uint8_t i = 0; i < solution_depth; ++i){
             printf("%s%s", separator, move_names[path[i]]);
@@ -413,6 +441,7 @@ int main(int argc, char **argv)
     else{
         puts("not found");
     }
+    */
     /* version1: Depth-Limited DFS add end */
     return output_failed();
 }
