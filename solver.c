@@ -1,5 +1,6 @@
 // Version 1 - 2026/09/30: Replace the BFS table-based solver with Depth-Limited DFS
 // Version 2 - 2026/09/30: Add IDDFS with same-face move pruning
+// Version 3 - 2026/10/01: Add orientation/permutation pattern databases and convert IDDFS to IDA*
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -322,32 +323,185 @@ static int self_test(void)
     return 1;
 }
 
+/* version3: PDB heuristic and IDA* add begin */
+// orientation table
+static uint8_t *build_orientation_table(uint8_t *diameter)
+{
+    //step1. 配置記憶體
+    uint8_t *orientation_dist = malloc(ORIENTATIONS); //這個 orientation 到 solved 至少需要幾步
+    uint32_t *queue = malloc((size_t) ORIENTATIONS * sizeof *queue); //BFS 使用的佇列
+    
+    uint16_t orientation[3][ORIENTATIONS]; //加速產生下一個 state 
+
+    uint32_t head = 0, tail = 1, level_end = 1; //BFS queue 的管理資訊
+    //head: 下一個要取出的 queue index //tail: 下一個新 state 要放入的位置 //level_end: 目前 BFS 深度這一層的結束位置
+    state_t state; 
+    if (!orientation_dist || !queue) { //配置失敗檢查
+        free(orientation_dist);
+        free(queue);
+        return NULL;
+    }
+    
+    //step3. 建立 orientation transition table
+    for (uint16_t rank = 0; rank < ORIENTATIONS; ++rank) {
+        unrank_state(rank, &state); //完整 rank = 0 × 729 + orientation rank
+        for (uint8_t face = 0; face < 3; ++face) {
+            state_t next = quarter_turn(state, face);
+            orientation[face][rank] =
+                (uint16_t) (rank_state(&next) % ORIENTATIONS); //取出新的 orientation rank
+        }
+    }
+    
+    //step4. 初始化 BFS
+    memset(orientation_dist, UINT8_MAX, ORIENTATIONS); //UINT8_MAX = 255 //memset(起始位址, 填入的值, byte數量);
+    queue[0] = 0; //先把 solved state 放入 BFS
+    orientation_dist[0] = 0; //先把 solved state 放入 BFS
+    *diameter = 0; //所有 state 中，最大的最短距離
+
+    //step5. 真正的 BFS
+    while (head < tail) { //BFS queue 尚有 state 沒處理，就繼續搜尋
+        if (head == level_end) { //記錄 BFS 目前進入哪個深度
+            level_end = tail; //目前這一層在 queue 中的結束位置
+            ++*diameter;
+        }
+        uint32_t here = queue[head++]; //取得下一個 state 的 rank，然後 head 加 1
+        uint16_t o = (uint16_t) here; //拆出 orientation rank
+        for (uint8_t face = 0; face < 3; ++face) { //產生 9 種 move
+            uint16_t next_o = o;
+            for (uint8_t turn = 0; turn < 3; ++turn) {
+                next_o = orientation[face][next_o];
+                uint32_t there = (uint32_t) next_o; //新的 orientation rank
+                // 存 orientation_dist
+                if (orientation_dist[there] == UINT8_MAX) {
+                    orientation_dist[there] = orientation_dist[here] + 1;
+                    queue[tail++] = there;
+                }
+            }
+        }
+    }
+    
+    //結束與回傳
+    free(queue);
+    if (tail != ORIENTATIONS) { //確認是否真的拜訪全部 729 個 state
+        free(orientation_dist);
+        return NULL;
+    }
+    return orientation_dist;
+}
+
+static uint8_t *build_permutation_table(uint8_t *diameter)
+{
+    //step1. 配置記憶體
+    uint8_t *permutation_dist = malloc(PERMUTATIONS); //這個 permutation 到 solved 至少需要幾步
+    uint32_t *queue = malloc((size_t) PERMUTATIONS * sizeof *queue); //BFS 使用的佇列
+    
+    uint16_t permutation[3][PERMUTATIONS]; //加速產生下一個 state
+
+    uint32_t head = 0, tail = 1, level_end = 1; //BFS queue 的管理資訊
+    //head: 下一個要取出的 queue index //tail: 下一個新 state 要放入的位置 //level_end: 目前 BFS 深度這一層的結束位置
+    state_t state; 
+    if (!permutation_dist || !queue) { //配置失敗檢查
+        free(permutation_dist);
+        free(queue);
+        return NULL;
+    }
+    
+    //step3. 建立 permutation transition table
+    for (uint16_t rank = 0; rank < PERMUTATIONS; ++rank) {
+        unrank_state((uint32_t) rank * ORIENTATIONS, &state); //完整 rank = permutation rank × 729 + 0
+        for (uint8_t face = 0; face < 3; ++face) {
+            state_t next = quarter_turn(state, face);
+            permutation[face][rank] =
+                (uint16_t) (rank_state(&next) / ORIENTATIONS); //取出新的 permutation rank
+        }
+    }
+    
+    //step4. 初始化 BFS
+    memset(permutation_dist, UINT8_MAX, PERMUTATIONS); //UINT8_MAX = 255 //memset(起始位址, 填入的值, byte數量);
+    queue[0] = 0; //先把 solved state 放入 BFS
+    permutation_dist[0] = 0; //先把 solved state 放入 BFS
+    *diameter = 0; //所有 state 中，最大的最短距離
+    
+    //step5. 真正的 BFS
+    while (head < tail) { //BFS queue 尚有 state 沒處理，就繼續搜尋
+        if (head == level_end) { //記錄 BFS 目前進入哪個深度
+            level_end = tail; //目前這一層在 queue 中的結束位置
+            ++*diameter;
+        }
+        uint32_t here = queue[head++]; //取得下一個 state 的 rank，然後 head 加 1
+        uint16_t p = (uint16_t) here; //拆出 permutation rank
+        for (uint8_t face = 0; face < 3; ++face) { //產生 9 種 move
+            uint16_t next_p = p;
+            for (uint8_t turn = 0; turn < 3; ++turn) {
+                next_p = permutation[face][next_p];
+                uint32_t there = (uint32_t) next_p; //新的 permutation rank
+                // 存 permutation_dist
+                if (permutation_dist[there] == UINT8_MAX) {
+                    permutation_dist[there] = permutation_dist[here] + 1;
+                    queue[tail++] = there;
+                }
+            }
+        }
+    }
+    
+    //結束與回傳
+    free(queue);
+    if (tail != PERMUTATIONS) { //確認是否真的拜訪全部 5040 個 state
+        free(permutation_dist);
+        return NULL;
+    }
+    return permutation_dist;
+}
+
+static uint8_t heuristic(const state_t *state, const uint8_t *orientation_table, const uint8_t *permutation_table){
+    uint32_t rank = rank_state(state);
+    
+    uint16_t p = (uint16_t)(rank / ORIENTATIONS);
+    uint16_t o = (uint16_t)(rank % ORIENTATIONS);
+    
+    
+    uint8_t heuristic_p = permutation_table[p];
+    uint8_t heuristic_o = orientation_table[o];
+    
+    return heuristic_p > heuristic_o ? heuristic_p : heuristic_o;
+}
+/* version3: PDB heuristic and IDA* add end */
 /* version1: Depth-Limited DFS add begin */
 static uint8_t path[11];
 static uint8_t solution_depth;
 
-static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit){
+
+// static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit){ // version3: PDB heuristic and IDA* mark
+static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit, uint8_t *orientation_table, uint8_t *permutation_table){ // version3: PDB heuristic and IDA* add
     //1. sloved?
     if(rank_state(&state) == 0){
-        solution_depth = depth; //★ 找到答案時，記錄用了幾步
+        solution_depth = depth; //找到答案時，記錄用了幾步
         return 1;
     }
     //2. depth limit reached?
     if(depth == limit){
         return 0;
     }
+    
+    /* version3: PDB heuristic and IDA* add begin */
+    if(heuristic(&state, orientation_table, permutation_table) + depth > limit){
+        return 0;
+    }
+    /* version3: PDB heuristic and IDA* add end */
+
     //3. try 9 moves
     for(uint8_t move = 0; move < MOVES; ++move){
-        /* version2: IDDFS and move pruning add begin */
+        /* Version2: IDDFS and move pruning add begin */
         if (depth > 0 &&
             move / 3 == path[depth - 1] / 3) {
             continue;
         }
-        /* version2: IDDFS and move pruning add end */
+        /* Version2: IDDFS and move pruning add end */
         state_t next = apply_move(state, move); //把「move 編號 0~8」轉成：哪個面 + 做幾次 quarter turn
         path[depth] = move;
         // 繼續往下一層搜尋
-        if(depth_limit_dfs(next, depth + 1, limit)){
+        // if(depth_limit_dfs(next, depth + 1, limit)){ // version3: PDB heuristic and IDA* mark
+        if(depth_limit_dfs(next, depth + 1, limit, orientation_table, permutation_table)){ // version3: PDB heuristic and IDA* add
             return 1;
         }
     }
@@ -360,6 +514,11 @@ int main(int argc, char **argv)
 {
     state_t state;
     //uint8_t diameter; /* version1: Depth-Limited DFS mark */
+    /* version3: PDB heuristic and IDA* add begin */
+    uint8_t orientation_diameter;
+    uint8_t permutation_diameter;
+    /* version3: PDB heuristic and IDA* add end */
+
     if (argc == 2 && !strcmp(argv[1], "--self-test")) {
         if (!self_test()) {
             fputs("self-test failed\n", stderr);
@@ -379,7 +538,35 @@ int main(int argc, char **argv)
         }
         puts("3674160 states; diameter 11");
         */
-        puts("self-test passed"); /* version1: Depth-Limited DFS add */
+
+        /* version3: PDB heuristic and IDA* add begin */
+        uint8_t *orientation_table = build_orientation_table(&orientation_diameter);
+        if (!orientation_table) {
+            fputs("could not build complete state orientation table\n", stderr);
+            return 1;
+        }
+        
+        uint8_t *permutation_table = build_permutation_table(&permutation_diameter);
+        if (!permutation_table) {
+            fputs("could not build complete state permutation table\n", stderr);
+            free(orientation_table);
+            return 1;
+        }
+        free(orientation_table);
+        free(permutation_table);
+
+        if (orientation_diameter != 6) {
+            fputs("orientation diameter check failed\n", stderr);
+            return 1;
+        }
+        if (permutation_diameter != 7) {
+            fputs("permutation diameter check failed\n", stderr);
+            return 1;
+        }
+        puts("orientation_diameter 6; permutation_diameter 7");
+        /* version3: PDB heuristic and IDA* add end */
+
+        // puts("self-test passed"); /* version1: Depth-Limited DFS add */ // version3: PDB heuristic and IDA* mark
         return output_failed();
     }
     if (argc != 2 || !parse_state(argv[1], &state)) {
@@ -407,14 +594,37 @@ int main(int argc, char **argv)
     free(table);
     */
 
+    /* version3: PDB heuristic and IDA* add begin */
+    uint8_t *orientation_table = build_orientation_table(&orientation_diameter);
+    if (!orientation_table) {
+        fputs("could not build complete state orientation table\n", stderr);
+        return 1;
+    }
+
+    uint8_t *permutation_table = build_permutation_table(&permutation_diameter);
+    if (!permutation_table) {
+        fputs("could not build complete state permutation table\n", stderr);
+        free(orientation_table);
+        return 1;
+    }
+    /* version3: PDB heuristic and IDA* add end */
+
     /* version1: Depth-Limited DFS add begin */
     //uint8_t limit = 11; /* version2: IDDFS and move pruning mark */
     int found = 0; /* version2: IDDFS and move pruning add */
     const char *separator = "";
 
     /* version2: IDDFS and move pruning add begin */
+    /* version3: PDB heuristic and IDA* mark */
+    /*
     for(uint8_t limit = 0; limit <= 11; ++limit){ // 從 0 一直試到 11
-        if(depth_limit_dfs(state, 0, limit)){
+        if(depth_limit_dfs(state, 0, limit)){ 
+    */
+    /* version3: PDB heuristic and IDA* add begin */
+    uint8_t start = heuristic(&state, orientation_table, permutation_table);
+    for (uint8_t limit = start; limit <= 11; ++limit){
+        if(depth_limit_dfs(state, 0, limit, orientation_table, permutation_table)){ 
+    /* version3: PDB heuristic and IDA* add end */
             for(uint8_t i = 0; i < solution_depth; ++i){
                 printf("%s%s", separator, move_names[path[i]]);
                 separator = " ";
@@ -427,6 +637,12 @@ int main(int argc, char **argv)
     if(found==0){
         puts("not found");
     }
+
+    /* version3: PDB heuristic and IDA* add begin */
+    free(orientation_table);
+    free(permutation_table);
+    /* version3: PDB heuristic and IDA* add end */
+
     /* version2: IDDFS and move pruning add end */
 
     /* version2: IDDFS and move pruning mark */
