@@ -1,3 +1,4 @@
+// Version 1 - 2026/09/30: Replace the BFS table-based solver with Depth-Limited DFS
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -188,6 +189,8 @@ static int valid(const state_t *state)
     return sum % 3U == 0;
 }
 
+/* version1: Depth-Limited DFS mark */
+/*
 static uint8_t *build_table(uint8_t *diameter)
 {
     uint8_t *toward_solved = malloc(STATES);
@@ -249,6 +252,7 @@ static uint8_t *build_table(uint8_t *diameter)
     }
     return toward_solved;
 }
+*/
 
 /*@ requires valid_read_string(input);
     requires \valid(state);
@@ -317,15 +321,45 @@ static int self_test(void)
     return 1;
 }
 
+/* version1: Depth-Limited DFS add begin */
+static uint8_t path[11];
+static uint8_t solution_depth;
+
+static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit){
+    //1. sloved?
+    if(rank_state(&state) == 0){
+        solution_depth = depth; //找到答案時，記錄用了幾步
+        return 1;
+    }
+    //2. depth limit reached?
+    if(depth == limit){
+        return 0;
+    }
+    //3. try 9 moves
+    for(uint8_t move = 0; move < MOVES; ++move){
+        state_t next = apply_move(state, move); //把「move 編號 0~8」轉成：哪個面 + 做幾次 quarter turn
+        path[depth] = move;
+        // 繼續往下一層搜尋
+        if(depth_limit_dfs(next, depth + 1, limit)){
+            return 1;
+        }
+    }
+    //9 個 move 都失敗
+    return 0;
+}
+/* version1: Depth-Limited DFS add end */
+
 int main(int argc, char **argv)
 {
     state_t state;
-    uint8_t diameter;
+    //uint8_t diameter; /* version1: Depth-Limited DFS mark */
     if (argc == 2 && !strcmp(argv[1], "--self-test")) {
         if (!self_test()) {
             fputs("self-test failed\n", stderr);
             return 1;
         }
+        /* version1: Depth-Limited DFS mark */
+        /*
         uint8_t *table = build_table(&diameter);
         if (!table) {
             fputs("could not build complete state table\n", stderr);
@@ -337,6 +371,8 @@ int main(int argc, char **argv)
             return 1;
         }
         puts("3674160 states; diameter 11");
+        */
+        puts("self-test passed"); /* version1: Depth-Limited DFS add */
         return output_failed();
     }
     if (argc != 2 || !parse_state(argv[1], &state)) {
@@ -345,11 +381,14 @@ int main(int argc, char **argv)
                 argc > 0 && argv[0] ? argv[0] : "solver");
         return 2;
     }
+    /* version1: Depth-Limited DFS mark */
+    /*
     uint8_t *table = build_table(&diameter);
     if (!table) {
         fputs("could not build complete state table\n", stderr);
         return 1;
     }
+
     const char *separator = "";
     for (uint32_t rank = rank_state(&state); rank; rank = rank_state(&state)) {
         uint8_t move = table[rank];
@@ -359,5 +398,21 @@ int main(int argc, char **argv)
     }
     putchar('\n');
     free(table);
+    */
+
+    /* version1: Depth-Limited DFS add begin */
+    uint8_t limit = 11; //暫時設定
+    const char *separator = "";
+    if(depth_limit_dfs(state, 0, limit)){
+        for(uint8_t i = 0; i < solution_depth; ++i){
+            printf("%s%s", separator, move_names[path[i]]);
+                separator = " ";
+        }
+        putchar('\n');
+    }
+    else{
+        puts("not found");
+    }
+    /* version1: Depth-Limited DFS add end */
     return output_failed();
 }
