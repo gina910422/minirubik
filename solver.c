@@ -2,10 +2,380 @@
 // Version 2 - 2026/09/30: Add IDDFS with same-face move pruning
 // Version 3 - 2026/10/01: Add orientation/permutation pattern databases and convert IDDFS to IDA*
 // Version 4 - 2026/10/02: Replace recursive IDA* DFS with an explicit stack
+// Version 5 - 2026/10/02: RV32I-friendly C optimization
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* version5: add begin */
+static const uint8_t orientation_table[729] = {
+0, 5, 5, 4, 4, 5, 4, 6, 3, 6, 3, 4, 4, 3, 5, 5, 
+1, 5, 5, 4, 4, 5, 5, 3, 3, 5, 4, 4, 3, 6, 4, 5, 
+4, 5, 4, 4, 4, 4, 2, 3, 5, 4, 5, 5, 4, 5, 5, 4, 
+5, 4, 3, 5, 3, 5, 4, 5, 4, 5, 5, 5, 4, 4, 5, 5, 
+4, 5, 4, 5, 4, 5, 4, 5, 4, 4, 4, 5, 5, 5, 3, 4, 
+4, 5, 3, 5, 4, 5, 4, 5, 4, 5, 4, 4, 4, 4, 5, 5, 
+4, 4, 5, 4, 5, 5, 5, 4, 5, 4, 4, 5, 4, 5, 3, 5, 
+6, 5, 5, 4, 6, 4, 5, 5, 4, 5, 5, 6, 5, 4, 6, 5, 
+4, 5, 6, 4, 4, 5, 5, 6, 3, 4, 4, 5, 6, 4, 3, 5, 
+2, 5, 4, 5, 5, 5, 3, 5, 5, 5, 4, 5, 4, 5, 6, 5, 
+5, 5, 5, 5, 3, 6, 4, 3, 4, 3, 5, 4, 5, 5, 2, 5, 
+4, 5, 4, 5, 4, 5, 4, 4, 4, 4, 3, 5, 4, 5, 5, 4, 
+4, 5, 3, 5, 6, 4, 5, 5, 4, 5, 4, 5, 5, 5, 4, 4, 
+5, 5, 4, 4, 5, 5, 5, 5, 4, 4, 5, 4, 6, 5, 5, 5, 
+6, 6, 5, 4, 3, 4, 4, 5, 5, 6, 4, 6, 5, 5, 5, 5, 
+5, 4, 5, 5, 3, 5, 4, 4, 5, 4, 5, 5, 5, 4, 3, 3, 
+5, 4, 4, 5, 5, 6, 4, 3, 4, 4, 4, 4, 2, 5, 4, 4, 
+4, 4, 5, 4, 4, 4, 4, 4, 5, 5, 4, 3, 5, 5, 5, 5, 
+4, 5, 2, 4, 5, 3, 4, 5, 3, 4, 5, 5, 4, 5, 5, 3, 
+4, 4, 4, 5, 6, 4, 5, 4, 5, 3, 5, 4, 5, 5, 5, 4, 
+5, 4, 5, 4, 3, 3, 5, 3, 4, 4, 5, 5, 4, 4, 4, 5, 
+5, 4, 5, 4, 4, 3, 3, 5, 4, 4, 5, 3, 5, 2, 4, 4, 
+5, 4, 4, 4, 5, 5, 5, 5, 5, 4, 5, 4, 5, 4, 5, 4, 
+5, 5, 4, 5, 5, 5, 5, 4, 5, 5, 4, 5, 3, 4, 4, 5, 
+4, 4, 5, 4, 5, 5, 5, 3, 4, 3, 3, 4, 2, 3, 3, 5, 
+4, 4, 5, 5, 4, 5, 5, 2, 5, 4, 4, 5, 4, 4, 4, 4, 
+5, 5, 5, 2, 5, 5, 5, 4, 5, 4, 1, 5, 6, 5, 2, 5, 
+5, 4, 3, 4, 5, 4, 5, 5, 4, 5, 6, 3, 4, 4, 4, 4, 
+4, 5, 4, 4, 5, 3, 4, 5, 4, 4, 3, 5, 5, 5, 4, 5, 
+4, 5, 5, 6, 5, 4, 6, 5, 5, 5, 5, 4, 5, 5, 5, 5, 
+3, 5, 4, 5, 4, 4, 5, 5, 3, 4, 5, 5, 4, 4, 4, 5, 
+4, 5, 4, 5, 4, 5, 4, 4, 5, 4, 4, 5, 5, 4, 4, 5, 
+5, 4, 5, 5, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 
+5, 3, 4, 5, 6, 4, 5, 5, 5, 4, 4, 5, 4, 5, 4, 4, 
+5, 5, 4, 4, 5, 5, 4, 5, 5, 4, 6, 4, 4, 5, 4, 5, 
+6, 5, 6, 6, 5, 5, 4, 5, 2, 5, 5, 5, 5, 5, 3, 4, 
+3, 4, 5, 5, 4, 4, 3, 6, 6, 5, 5, 5, 5, 5, 6, 4, 
+4, 5, 5, 4, 4, 5, 6, 5, 5, 4, 5, 6, 5, 3, 4, 4, 
+5, 5, 5, 6, 5, 6, 4, 5, 5, 5, 6, 4, 4, 5, 4, 4, 
+4, 4, 5, 4, 4, 5, 4, 5, 4, 3, 4, 5, 5, 5, 5, 5, 
+5, 5, 4, 4, 5, 4, 4, 5, 3, 5, 3, 4, 3, 5, 4, 4, 
+5, 4, 5, 5, 5, 2, 4, 4, 3, 4, 3, 4, 4, 5, 3, 4, 
+5, 5, 4, 5, 4, 5, 4, 5, 4, 5, 5, 5, 4, 5, 5, 5, 
+5, 5, 6, 5, 4, 5, 6, 5, 4, 5, 3, 5, 5, 4, 3, 4, 
+4, 4, 5, 4, 4, 5, 4, 5, 6, 5, 4, 5, 5, 4, 4, 5, 
+5, 5, 4, 5, 4, 5, 3, 5, 5
+};
+
+static const uint8_t permutation_table[5040] = {
+0, 7, 7, 6, 6, 6, 7, 5, 6, 1, 6, 6, 6, 6, 6, 6, 
+1, 6, 1, 6, 6, 7, 6, 5, 7, 3, 3, 6, 6, 6, 5, 5, 
+6, 6, 4, 4, 4, 5, 5, 4, 6, 5, 6, 4, 5, 5, 3, 5, 
+5, 5, 4, 6, 5, 4, 6, 4, 6, 4, 4, 5, 6, 5, 3, 4, 
+5, 5, 5, 5, 6, 5, 5, 4, 6, 4, 5, 5, 6, 3, 6, 4, 
+7, 6, 4, 4, 3, 6, 4, 4, 6, 5, 5, 5, 6, 6, 4, 3, 
+6, 4, 4, 5, 5, 5, 4, 5, 6, 6, 4, 4, 4, 5, 4, 5, 
+6, 5, 5, 4, 5, 5, 3, 5, 7, 4, 5, 5, 5, 5, 4, 5, 
+5, 6, 4, 5, 5, 4, 5, 5, 6, 5, 6, 5, 5, 5, 5, 6, 
+5, 5, 5, 6, 3, 5, 6, 5, 3, 4, 4, 6, 6, 2, 4, 5, 
+5, 6, 5, 5, 6, 3, 6, 5, 3, 4, 4, 5, 6, 6, 6, 6, 
+6, 3, 5, 4, 5, 5, 5, 5, 3, 5, 2, 5, 6, 5, 5, 6, 
+6, 5, 5, 2, 5, 5, 1, 6, 6, 5, 5, 6, 6, 5, 6, 5, 
+5, 2, 6, 6, 2, 5, 5, 6, 6, 5, 5, 7, 3, 4, 6, 5, 
+3, 5, 4, 5, 5, 2, 5, 5, 5, 6, 5, 5, 6, 3, 6, 4, 
+5, 5, 5, 3, 6, 5, 3, 4, 6, 6, 5, 5, 4, 6, 5, 5, 
+5, 3, 5, 6, 2, 7, 5, 4, 6, 5, 4, 5, 5, 6, 6, 5, 
+4, 6, 4, 4, 4, 5, 6, 4, 5, 5, 6, 3, 5, 5, 4, 5, 
+6, 4, 5, 5, 4, 6, 4, 6, 5, 5, 4, 4, 4, 5, 5, 5, 
+5, 4, 5, 5, 5, 5, 3, 6, 5, 4, 5, 6, 4, 5, 6, 6, 
+4, 4, 5, 5, 5, 4, 5, 6, 5, 6, 4, 6, 6, 3, 5, 5, 
+5, 6, 6, 3, 5, 6, 3, 5, 5, 6, 5, 5, 5, 6, 6, 5, 
+5, 3, 6, 5, 2, 5, 6, 5, 6, 5, 6, 5, 2, 5, 6, 6, 
+1, 6, 6, 5, 5, 2, 6, 5, 6, 5, 5, 5, 5, 2, 6, 5, 
+6, 5, 4, 6, 5, 3, 7, 4, 6, 6, 3, 5, 4, 6, 4, 3, 
+5, 6, 6, 4, 6, 6, 5, 3, 4, 6, 6, 3, 6, 5, 3, 5, 
+6, 5, 6, 5, 5, 6, 5, 6, 5, 3, 5, 5, 2, 6, 6, 4, 
+4, 5, 5, 5, 4, 6, 5, 5, 3, 5, 5, 4, 5, 4, 6, 4, 
+4, 5, 5, 5, 4, 4, 5, 5, 5, 5, 4, 6, 6, 5, 6, 5, 
+6, 5, 3, 5, 4, 5, 5, 4, 5, 6, 5, 4, 6, 6, 5, 6, 
+3, 4, 4, 6, 5, 6, 6, 5, 6, 3, 5, 4, 5, 6, 6, 5, 
+2, 6, 3, 5, 5, 5, 5, 6, 4, 4, 6, 5, 5, 4, 6, 3, 
+6, 5, 6, 4, 4, 6, 4, 5, 5, 5, 5, 5, 5, 6, 5, 4, 
+5, 4, 4, 5, 5, 5, 6, 6, 6, 5, 4, 4, 3, 6, 6, 3, 
+6, 6, 5, 3, 5, 6, 4, 5, 5, 5, 5, 6, 6, 2, 5, 2, 
+6, 4, 5, 6, 6, 5, 1, 6, 5, 5, 4, 6, 6, 5, 5, 2, 
+5, 3, 5, 5, 5, 6, 5, 6, 6, 5, 4, 4, 4, 5, 5, 5, 
+5, 4, 5, 5, 5, 5, 4, 6, 4, 6, 5, 3, 6, 5, 3, 4, 
+5, 5, 6, 5, 5, 5, 5, 5, 5, 3, 5, 6, 2, 6, 6, 4, 
+6, 4, 4, 5, 5, 5, 6, 5, 5, 7, 4, 3, 3, 6, 5, 3, 
+6, 6, 6, 3, 5, 6, 4, 6, 5, 4, 4, 6, 5, 5, 5, 5, 
+5, 5, 4, 5, 5, 5, 4, 5, 5, 5, 4, 5, 6, 4, 4, 5, 
+5, 5, 6, 5, 3, 5, 6, 6, 3, 5, 6, 4, 4, 4, 6, 6, 
+5, 6, 4, 6, 5, 4, 5, 6, 4, 6, 6, 3, 5, 5, 3, 4, 
+6, 5, 5, 5, 5, 6, 5, 6, 4, 3, 5, 6, 2, 6, 6, 5, 
+7, 5, 4, 5, 5, 5, 5, 6, 5, 6, 5, 5, 5, 5, 5, 5, 
+6, 4, 6, 5, 5, 4, 4, 5, 3, 7, 5, 5, 5, 5, 5, 5, 
+5, 4, 4, 6, 6, 6, 5, 4, 4, 5, 4, 4, 6, 6, 6, 4, 
+5, 5, 6, 4, 6, 4, 4, 4, 6, 5, 5, 5, 4, 5, 4, 6, 
+4, 4, 5, 6, 3, 6, 5, 3, 5, 4, 5, 6, 4, 6, 6, 5, 
+4, 5, 6, 4, 4, 3, 5, 5, 5, 6, 4, 5, 5, 4, 5, 6, 
+4, 6, 4, 6, 5, 4, 5, 5, 5, 5, 4, 6, 6, 6, 5, 4, 
+4, 6, 4, 3, 6, 6, 6, 5, 6, 5, 4, 4, 4, 5, 4, 5, 
+5, 7, 4, 4, 4, 5, 6, 3, 6, 5, 6, 4, 5, 5, 4, 5, 
+5, 6, 5, 4, 6, 3, 4, 4, 5, 4, 5, 6, 6, 6, 4, 5, 
+5, 4, 5, 4, 3, 5, 5, 4, 6, 3, 5, 5, 4, 6, 4, 5, 
+4, 5, 4, 4, 4, 3, 6, 5, 6, 4, 6, 5, 5, 4, 4, 6, 
+5, 5, 2, 7, 5, 5, 6, 6, 5, 5, 3, 5, 5, 5, 5, 3, 
+4, 6, 4, 3, 6, 4, 6, 5, 4, 5, 5, 5, 6, 3, 4, 4, 
+5, 3, 6, 6, 6, 5, 4, 6, 4, 4, 4, 5, 4, 6, 5, 4, 
+4, 4, 6, 5, 5, 5, 4, 6, 5, 4, 6, 5, 5, 6, 5, 7, 
+4, 5, 3, 6, 5, 5, 4, 5, 6, 5, 6, 5, 2, 5, 6, 5, 
+3, 5, 6, 4, 5, 3, 4, 6, 5, 6, 6, 5, 6, 3, 4, 5, 
+5, 5, 2, 5, 6, 6, 5, 6, 6, 4, 3, 5, 6, 6, 5, 3, 
+5, 5, 4, 3, 4, 5, 6, 6, 5, 3, 5, 3, 5, 5, 2, 6, 
+5, 5, 4, 4, 4, 5, 5, 5, 5, 3, 4, 5, 3, 4, 4, 6, 
+6, 4, 5, 6, 6, 5, 6, 5, 6, 6, 4, 4, 4, 5, 5, 4, 
+6, 6, 5, 5, 6, 5, 5, 4, 6, 4, 3, 5, 6, 6, 4, 5, 
+6, 6, 4, 4, 5, 5, 6, 4, 5, 5, 6, 4, 4, 5, 4, 6, 
+1, 6, 6, 5, 6, 6, 6, 5, 6, 2, 5, 5, 5, 5, 6, 5, 
+2, 5, 2, 6, 5, 6, 5, 5, 6, 4, 5, 5, 5, 4, 6, 5, 
+5, 7, 4, 4, 3, 5, 5, 4, 6, 6, 6, 4, 6, 6, 4, 4, 
+5, 5, 6, 7, 3, 4, 6, 4, 4, 4, 5, 4, 5, 4, 3, 5, 
+5, 6, 5, 6, 6, 4, 4, 4, 3, 5, 6, 5, 4, 4, 5, 3, 
+5, 4, 6, 5, 4, 5, 4, 5, 4, 5, 4, 6, 4, 5, 5, 4, 
+6, 5, 5, 5, 4, 4, 5, 4, 3, 6, 5, 6, 6, 4, 5, 5, 
+6, 5, 5, 6, 4, 4, 6, 4, 6, 5, 5, 2, 5, 5, 3, 6, 
+5, 7, 5, 5, 4, 5, 5, 4, 6, 3, 6, 4, 3, 6, 5, 5, 
+2, 5, 6, 5, 4, 4, 6, 3, 5, 3, 6, 5, 4, 5, 4, 5, 
+3, 6, 3, 5, 5, 5, 5, 4, 5, 5, 6, 4, 4, 5, 4, 5, 
+3, 5, 6, 6, 5, 4, 6, 6, 5, 3, 4, 5, 4, 4, 6, 5, 
+5, 6, 3, 4, 5, 6, 5, 6, 5, 5, 4, 5, 6, 5, 5, 4, 
+5, 5, 4, 4, 4, 4, 6, 5, 5, 4, 6, 5, 6, 5, 4, 5, 
+5, 5, 6, 5, 5, 5, 4, 6, 4, 5, 4, 5, 5, 5, 4, 5, 
+5, 6, 6, 5, 2, 5, 5, 4, 3, 5, 6, 5, 6, 3, 5, 5, 
+4, 6, 5, 5, 6, 3, 5, 4, 6, 6, 3, 4, 6, 6, 4, 5, 
+6, 5, 4, 5, 5, 6, 6, 4, 5, 4, 5, 4, 4, 5, 6, 5, 
+4, 3, 5, 4, 6, 4, 3, 5, 6, 4, 5, 4, 4, 5, 5, 6, 
+4, 4, 3, 6, 4, 5, 4, 5, 5, 4, 4, 5, 6, 5, 6, 5, 
+5, 6, 4, 4, 4, 6, 5, 3, 5, 6, 6, 4, 5, 6, 5, 4, 
+6, 5, 4, 4, 4, 5, 4, 5, 4, 6, 5, 4, 5, 4, 6, 5, 
+6, 4, 7, 4, 3, 5, 5, 5, 4, 4, 6, 5, 5, 5, 6, 4, 
+6, 5, 5, 4, 3, 6, 5, 6, 4, 6, 5, 6, 5, 5, 4, 5, 
+4, 6, 5, 3, 6, 6, 4, 5, 5, 4, 4, 5, 5, 6, 6, 5, 
+5, 4, 5, 4, 4, 5, 6, 5, 5, 6, 5, 5, 4, 4, 6, 4, 
+3, 5, 5, 6, 6, 4, 5, 4, 4, 5, 5, 4, 6, 4, 6, 4, 
+4, 5, 7, 5, 5, 5, 6, 4, 6, 5, 6, 5, 4, 5, 5, 6, 
+4, 5, 5, 6, 5, 5, 4, 5, 6, 5, 5, 5, 5, 4, 5, 4, 
+6, 5, 5, 5, 6, 5, 3, 6, 6, 5, 5, 5, 6, 5, 5, 4, 
+5, 6, 5, 3, 4, 6, 4, 6, 5, 4, 6, 5, 5, 5, 6, 6, 
+5, 4, 4, 5, 4, 5, 6, 6, 5, 6, 5, 5, 3, 4, 5, 5, 
+4, 5, 5, 5, 6, 4, 5, 4, 5, 5, 6, 5, 4, 4, 6, 5, 
+2, 5, 7, 5, 6, 5, 5, 4, 5, 3, 6, 5, 5, 5, 5, 6, 
+3, 4, 3, 6, 4, 5, 6, 5, 5, 5, 5, 3, 4, 6, 4, 5, 
+5, 5, 5, 5, 5, 5, 6, 5, 4, 4, 5, 4, 4, 5, 6, 6, 
+5, 5, 4, 6, 6, 5, 5, 6, 5, 5, 4, 5, 5, 5, 6, 5, 
+5, 5, 4, 5, 6, 5, 4, 6, 3, 6, 5, 4, 6, 5, 5, 6, 
+6, 4, 4, 6, 6, 5, 5, 4, 4, 5, 4, 4, 5, 6, 5, 5, 
+4, 3, 6, 4, 5, 5, 5, 4, 6, 5, 6, 3, 2, 6, 5, 5, 
+5, 5, 5, 5, 4, 6, 3, 5, 5, 5, 6, 5, 3, 4, 5, 4, 
+4, 4, 5, 5, 6, 4, 3, 6, 5, 5, 5, 6, 5, 4, 5, 4, 
+6, 4, 4, 6, 5, 4, 5, 5, 5, 6, 5, 5, 5, 4, 5, 5, 
+6, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 4, 5, 5, 4, 6, 
+5, 4, 5, 6, 6, 5, 5, 6, 5, 5, 5, 6, 4, 4, 6, 6, 
+6, 4, 6, 4, 5, 4, 4, 4, 6, 5, 6, 4, 5, 6, 3, 6, 
+6, 5, 5, 5, 5, 6, 4, 4, 5, 4, 3, 6, 5, 4, 5, 5, 
+5, 5, 4, 5, 5, 4, 5, 4, 5, 5, 4, 4, 6, 5, 5, 5, 
+4, 3, 5, 4, 5, 5, 3, 6, 6, 4, 6, 4, 4, 6, 5, 6, 
+4, 4, 3, 6, 4, 5, 4, 6, 5, 6, 4, 4, 6, 5, 5, 4, 
+5, 4, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 4, 5, 6, 5, 
+5, 4, 6, 6, 5, 4, 5, 5, 5, 5, 5, 5, 5, 4, 4, 6, 
+6, 5, 5, 6, 6, 5, 5, 5, 5, 4, 5, 5, 4, 6, 4, 6, 
+4, 5, 5, 5, 5, 3, 6, 5, 5, 5, 6, 6, 5, 4, 4, 7, 
+6, 6, 4, 4, 5, 4, 5, 5, 4, 5, 5, 5, 6, 5, 5, 5, 
+6, 5, 6, 4, 4, 5, 6, 5, 3, 6, 5, 4, 4, 6, 5, 5, 
+5, 4, 5, 6, 5, 5, 5, 4, 4, 5, 4, 5, 5, 5, 6, 5, 
+4, 4, 5, 5, 4, 5, 6, 4, 5, 5, 5, 4, 3, 5, 5, 4, 
+5, 6, 5, 5, 5, 5, 4, 5, 5, 5, 5, 5, 5, 6, 4, 6, 
+5, 6, 5, 6, 6, 4, 6, 6, 5, 5, 5, 6, 5, 5, 5, 7, 
+4, 6, 4, 5, 5, 4, 5, 5, 5, 5, 4, 6, 5, 4, 5, 5, 
+5, 5, 4, 5, 6, 5, 6, 5, 4, 4, 5, 5, 5, 5, 6, 4, 
+6, 5, 6, 4, 3, 6, 5, 5, 5, 6, 5, 6, 5, 6, 4, 5, 
+6, 6, 6, 4, 4, 5, 5, 5, 4, 5, 5, 5, 5, 5, 4, 5, 
+6, 4, 6, 6, 4, 5, 6, 5, 5, 4, 4, 7, 5, 3, 6, 4, 
+4, 5, 4, 5, 5, 4, 4, 4, 5, 6, 4, 5, 6, 5, 5, 4, 
+5, 6, 5, 6, 4, 3, 6, 3, 5, 4, 5, 5, 5, 4, 2, 5, 
+5, 6, 5, 6, 7, 5, 5, 3, 6, 5, 6, 2, 5, 5, 1, 6, 
+6, 5, 5, 6, 6, 6, 5, 6, 5, 2, 5, 6, 2, 5, 5, 5, 
+5, 5, 5, 6, 3, 4, 6, 4, 2, 6, 5, 6, 5, 3, 5, 4, 
+5, 5, 5, 5, 5, 3, 6, 4, 2, 6, 5, 5, 5, 6, 5, 5, 
+6, 3, 4, 6, 6, 6, 6, 5, 3, 4, 3, 4, 4, 6, 5, 6, 
+5, 6, 3, 6, 5, 5, 5, 4, 5, 4, 4, 6, 7, 5, 4, 4, 
+4, 5, 4, 4, 5, 4, 6, 5, 5, 6, 5, 4, 3, 6, 5, 6, 
+2, 5, 5, 5, 5, 3, 7, 5, 6, 4, 5, 4, 5, 3, 5, 6, 
+7, 4, 4, 6, 6, 4, 6, 5, 6, 6, 3, 4, 3, 5, 5, 3, 
+6, 5, 6, 4, 5, 6, 4, 4, 5, 6, 5, 4, 5, 5, 4, 4, 
+6, 6, 5, 5, 6, 6, 5, 5, 5, 4, 6, 4, 3, 5, 6, 4, 
+5, 5, 5, 5, 4, 5, 5, 4, 3, 5, 5, 4, 5, 4, 5, 4, 
+4, 5, 5, 4, 4, 4, 5, 5, 4, 5, 5, 5, 5, 6, 6, 5, 
+5, 5, 4, 5, 4, 5, 5, 4, 4, 6, 4, 5, 5, 6, 5, 6, 
+3, 6, 5, 6, 4, 5, 6, 4, 5, 4, 4, 6, 6, 5, 5, 4, 
+4, 5, 4, 4, 5, 5, 6, 4, 4, 5, 5, 5, 5, 6, 6, 5, 
+5, 4, 6, 4, 4, 4, 5, 6, 4, 6, 3, 5, 6, 5, 4, 5, 
+5, 5, 4, 6, 4, 4, 5, 4, 4, 4, 3, 6, 6, 3, 3, 4, 
+5, 5, 4, 4, 6, 4, 5, 4, 6, 3, 5, 6, 5, 4, 6, 4, 
+6, 5, 4, 3, 2, 6, 5, 4, 6, 6, 6, 5, 5, 6, 3, 5, 
+4, 6, 6, 6, 3, 4, 5, 3, 4, 5, 6, 5, 6, 4, 4, 5, 
+4, 6, 5, 5, 6, 4, 5, 4, 4, 3, 5, 6, 5, 4, 5, 4, 
+6, 4, 6, 4, 4, 5, 3, 6, 4, 5, 3, 6, 6, 6, 4, 4, 
+5, 5, 6, 4, 3, 6, 3, 6, 4, 4, 5, 5, 5, 4, 6, 6, 
+4, 4, 5, 5, 4, 4, 4, 7, 5, 5, 5, 5, 4, 5, 6, 4, 
+3, 5, 5, 4, 4, 4, 5, 5, 4, 6, 5, 4, 5, 4, 5, 5, 
+6, 5, 5, 4, 6, 5, 5, 4, 6, 6, 5, 6, 6, 5, 5, 4, 
+6, 5, 6, 4, 4, 5, 5, 4, 5, 4, 6, 6, 6, 4, 5, 5, 
+5, 5, 6, 4, 4, 6, 5, 6, 5, 5, 4, 5, 6, 5, 3, 5, 
+6, 5, 6, 4, 3, 5, 3, 5, 4, 5, 5, 5, 5, 4, 5, 6, 
+5, 4, 5, 6, 4, 4, 4, 5, 4, 4, 5, 6, 5, 3, 5, 3, 
+5, 4, 4, 5, 5, 4, 2, 5, 4, 5, 3, 5, 6, 5, 5, 3, 
+5, 4, 5, 5, 4, 6, 5, 6, 4, 5, 5, 5, 5, 3, 6, 6, 
+5, 5, 4, 6, 6, 4, 4, 6, 5, 6, 6, 4, 4, 6, 3, 5, 
+5, 4, 6, 6, 5, 5, 6, 5, 4, 4, 4, 6, 4, 5, 5, 6, 
+6, 6, 4, 5, 5, 4, 6, 5, 5, 5, 5, 7, 6, 4, 4, 5, 
+6, 5, 6, 5, 5, 4, 6, 5, 4, 5, 5, 6, 4, 4, 6, 4, 
+4, 5, 4, 5, 4, 4, 4, 4, 5, 7, 5, 5, 6, 5, 5, 3, 
+6, 4, 6, 6, 4, 4, 5, 5, 4, 5, 5, 5, 4, 3, 5, 6, 
+6, 5, 5, 6, 6, 4, 4, 5, 5, 5, 5, 3, 6, 5, 2, 5, 
+5, 4, 6, 6, 6, 6, 4, 6, 5, 3, 4, 6, 3, 6, 5, 5, 
+4, 6, 4, 5, 5, 5, 6, 5, 4, 5, 4, 5, 6, 5, 5, 4, 
+4, 6, 5, 3, 5, 5, 6, 4, 5, 4, 6, 5, 4, 7, 6, 6, 
+3, 5, 6, 4, 3, 4, 6, 5, 6, 6, 5, 5, 5, 4, 4, 6, 
+4, 4, 6, 5, 6, 4, 4, 5, 6, 4, 6, 4, 4, 6, 5, 6, 
+4, 4, 3, 5, 5, 5, 3, 5, 6, 5, 5, 6, 3, 5, 6, 5, 
+3, 5, 6, 4, 5, 2, 4, 6, 6, 5, 5, 6, 5, 3, 4, 5, 
+5, 6, 2, 6, 6, 5, 6, 5, 6, 4, 3, 5, 6, 5, 4, 3, 
+5, 6, 4, 3, 5, 5, 6, 5, 6, 4, 4, 4, 4, 5, 3, 6, 
+4, 5, 3, 5, 5, 4, 5, 4, 6, 4, 5, 4, 4, 3, 4, 6, 
+6, 3, 5, 5, 5, 5, 5, 4, 5, 6, 5, 4, 4, 5, 4, 5, 
+5, 6, 6, 6, 5, 6, 4, 4, 4, 6, 5, 4, 5, 5, 5, 5, 
+5, 4, 4, 5, 6, 6, 5, 5, 3, 5, 4, 5, 5, 5, 6, 4, 
+6, 5, 3, 6, 5, 4, 6, 5, 5, 5, 4, 5, 6, 5, 4, 4, 
+5, 5, 5, 4, 6, 4, 5, 4, 4, 4, 5, 6, 4, 5, 6, 5, 
+5, 4, 5, 5, 5, 5, 4, 5, 4, 5, 3, 6, 6, 5, 4, 5, 
+6, 6, 5, 4, 5, 4, 5, 3, 6, 6, 5, 5, 5, 5, 4, 4, 
+5, 5, 6, 5, 4, 6, 6, 4, 6, 4, 4, 5, 4, 5, 5, 6, 
+4, 5, 4, 5, 5, 4, 5, 5, 6, 4, 5, 5, 5, 3, 5, 6, 
+5, 6, 6, 4, 5, 4, 4, 4, 4, 5, 6, 5, 5, 5, 5, 5, 
+6, 4, 6, 5, 3, 4, 6, 5, 6, 5, 4, 3, 4, 5, 4, 6, 
+5, 6, 4, 5, 4, 5, 6, 3, 6, 4, 5, 4, 4, 5, 5, 6, 
+3, 6, 5, 5, 3, 5, 6, 4, 4, 4, 5, 5, 5, 4, 5, 4, 
+4, 6, 4, 5, 6, 4, 6, 5, 5, 5, 5, 4, 3, 5, 5, 5, 
+2, 6, 5, 5, 5, 3, 6, 5, 6, 4, 5, 4, 4, 3, 6, 6, 
+4, 5, 4, 3, 5, 6, 4, 6, 5, 4, 5, 4, 5, 6, 6, 5, 
+4, 4, 3, 5, 4, 5, 5, 5, 5, 4, 5, 5, 4, 5, 5, 5, 
+5, 6, 5, 4, 3, 5, 5, 5, 6, 6, 6, 4, 5, 5, 4, 4, 
+5, 4, 6, 5, 4, 3, 6, 4, 3, 6, 6, 5, 5, 4, 4, 5, 
+6, 5, 5, 6, 5, 4, 5, 4, 6, 4, 5, 2, 6, 5, 1, 6, 
+6, 5, 5, 5, 5, 5, 5, 6, 6, 2, 5, 6, 2, 5, 4, 6, 
+5, 5, 3, 6, 6, 6, 6, 6, 5, 4, 4, 4, 5, 5, 6, 4, 
+4, 6, 4, 4, 5, 6, 5, 5, 4, 5, 5, 5, 5, 6, 6, 6, 
+4, 5, 5, 5, 4, 5, 6, 4, 5, 5, 5, 4, 5, 5, 5, 5, 
+2, 5, 6, 5, 5, 5, 5, 4, 6, 3, 6, 5, 4, 6, 5, 5, 
+3, 5, 3, 5, 4, 6, 5, 4, 6, 4, 2, 6, 6, 5, 5, 4, 
+6, 6, 3, 5, 5, 5, 5, 3, 5, 6, 5, 3, 6, 6, 4, 5, 
+4, 5, 5, 6, 4, 4, 5, 5, 5, 3, 4, 5, 6, 5, 4, 5, 
+4, 6, 4, 5, 6, 5, 5, 5, 6, 4, 5, 6, 6, 3, 5, 4, 
+6, 6, 5, 5, 4, 6, 4, 5, 6, 6, 5, 4, 5, 5, 4, 4, 
+6, 4, 4, 5, 6, 5, 4, 5, 6, 6, 5, 5, 5, 5, 4, 5, 
+6, 5, 5, 5, 5, 5, 4, 5, 6, 5, 4, 4, 6, 5, 4, 4, 
+5, 6, 4, 6, 6, 5, 5, 5, 5, 4, 6, 5, 5, 6, 5, 5, 
+3, 4, 6, 4, 5, 5, 4, 5, 5, 4, 6, 4, 3, 6, 5, 5, 
+4, 4, 4, 5, 3, 6, 4, 4, 4, 4, 3, 6, 6, 6, 5, 6, 
+6, 5, 3, 5, 5, 6, 6, 4, 5, 5, 5, 4, 6, 6, 4, 5, 
+5, 6, 5, 5, 4, 4, 5, 5, 4, 4, 5, 6, 6, 4, 4, 6, 
+5, 6, 5, 6, 6, 3, 6, 5, 4, 5, 6, 3, 5, 5, 4, 4, 
+6, 5, 6, 5, 4, 6, 5, 5, 4, 4, 5, 5, 4, 6, 5, 5, 
+5, 5, 4, 3, 5, 5, 4, 4, 5, 5, 3, 6, 6, 5, 5, 4, 
+6, 4, 6, 4, 4, 4, 6, 5, 3, 6, 4, 6, 5, 4, 6, 5, 
+5, 3, 5, 6, 6, 5, 5, 5, 3, 6, 2, 5, 6, 4, 5, 5, 
+6, 3, 5, 6, 4, 4, 5, 4, 5, 6, 6, 4, 4, 5, 3, 6, 
+5, 5, 5, 6, 6, 5, 4, 4, 5, 4, 5, 5, 3, 6, 5, 6, 
+4, 6, 5, 4, 3, 4, 6, 5, 5, 5, 6, 4, 4, 4, 4, 5, 
+5, 6, 5, 6, 4, 5, 6, 4, 3, 5, 5, 6, 5, 4, 5, 4, 
+5, 5, 4, 5, 6, 4, 6, 5, 5, 6, 6, 4, 5, 6, 4, 5, 
+5, 5, 6, 5, 5, 4, 5, 6, 4, 4, 5, 6, 3, 4, 6, 6, 
+6, 3, 5, 5, 6, 4, 5, 4, 7, 5, 6, 4, 4, 6, 3, 5, 
+6, 5, 5, 5, 6, 6, 3, 4, 6, 5, 3, 5, 5, 4, 5, 5, 
+5, 5, 4, 6, 6, 4, 5, 4, 6, 4, 5, 4, 5, 4, 5, 5, 
+5, 3, 5, 5, 4, 5, 4, 6, 5, 4, 5, 4, 4, 5, 6, 6, 
+5, 5, 4, 5, 5, 5, 4, 6, 5, 6, 4, 4, 5, 5, 4, 4, 
+6, 5, 5, 5, 5, 6, 5, 5, 6, 5, 6, 5, 4, 5, 6, 5, 
+6, 4, 5, 5, 4, 5, 6, 6, 4, 5, 5, 4, 3, 5, 6, 5, 
+5, 6, 6, 4, 5, 5, 4, 6, 5, 6, 5, 6, 4, 4, 5, 4, 
+3, 6, 5, 6, 6, 4, 5, 4, 5, 5, 6, 5, 5, 4, 7, 4, 
+4, 5, 5, 4, 4, 5, 3, 6, 5, 4, 6, 5, 6, 5, 5, 6, 
+4, 4, 3, 6, 4, 5, 6, 6, 6, 4, 2, 5, 6, 6, 4, 5, 
+6, 6, 3, 5, 5, 5, 6, 3, 5, 5, 6, 3, 5, 5, 4, 6, 
+4, 4, 4, 6, 5, 4, 6, 5, 5, 5, 3, 5, 5, 4, 4, 4, 
+5, 6, 4, 4, 7, 5, 5, 4, 6, 6, 4, 5, 5, 5, 5, 4, 
+4, 6, 5, 6, 6, 5, 5, 4, 5, 4, 6, 5, 5, 5, 5, 4, 
+4, 3, 6, 4, 4, 6, 4, 5, 5, 5, 6, 3, 2, 5, 6, 5, 
+5, 4, 5, 5, 3, 5, 3, 5, 3, 5, 4, 5, 5, 6, 6, 5, 
+6, 4, 4, 6, 5, 6, 6, 3, 4, 5, 4, 3, 6, 6, 5, 5, 
+6, 5, 5, 4, 5, 3, 5, 4, 4, 5, 6, 6, 6, 4, 4, 5, 
+6, 5, 6, 6, 5, 4, 6, 4, 5, 6, 6, 4, 5, 6, 4, 5, 
+6, 5, 7, 5, 5, 5, 6, 6, 4, 5, 5, 6, 5, 5, 6, 5, 
+5, 4, 3, 5, 5, 5, 5, 6, 5, 5, 4, 5, 5, 5, 5, 4, 
+5, 4, 4, 4, 5, 4, 5, 6, 3, 6, 5, 4, 5, 6, 5, 6, 
+5, 4, 4, 6, 6, 6, 6, 4, 4, 4, 4, 4, 5, 5, 7, 5, 
+5, 5, 6, 4, 6, 3, 5, 2, 6, 6, 6, 5, 4, 6, 3, 5, 
+5, 5, 6, 6, 5, 6, 5, 3, 5, 5, 6, 5, 4, 6, 6, 6, 
+4, 4, 6, 4, 4, 4, 5, 5, 5, 6, 4, 5, 5, 5, 4, 6, 
+4, 6, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 4, 
+5, 6, 5, 4, 6, 6, 6, 4, 5, 3, 5, 6, 5, 5, 5, 5, 
+6, 5, 6, 4, 4, 5, 4, 6, 5, 5, 4, 6, 6, 6, 4, 5, 
+5, 5, 6, 4, 3, 5, 4, 6, 4, 5, 6, 6, 6, 4, 5, 6, 
+5, 4, 6, 5, 4, 4, 5, 6, 4, 5, 5, 5, 4, 5, 6, 4, 
+4, 5, 5, 4, 4, 5, 5, 5, 5, 6, 5, 4, 5, 5, 5, 5, 
+6, 5, 4, 4, 6, 6, 4, 5, 6, 6, 4, 6, 6, 5, 5, 5, 
+7, 4, 6, 4, 5, 5, 5, 5, 5, 3, 5, 6, 6, 4, 5, 5, 
+6, 5, 6, 4, 4, 6, 4, 6, 5, 5, 4, 5, 6, 6, 4, 5, 
+4, 6, 5, 5, 4, 4, 5, 4, 5, 3, 5, 6, 5, 4, 3, 6, 
+4, 6, 4, 6, 6, 4, 5, 4, 5, 4, 6, 3, 6, 5, 2, 5, 
+7, 5, 5, 5, 5, 6, 4, 5, 6, 3, 5, 5, 3, 6, 5, 4, 
+4, 5, 5, 6, 4, 4, 7, 4, 3, 5, 5, 5, 4, 4, 5, 4, 
+5, 6, 4, 5, 6, 4, 5, 4, 3, 5, 5, 4, 4, 5, 4, 6, 
+5, 4, 5, 5, 5, 5, 6, 6, 4, 3, 4, 5, 4, 5, 4, 6, 
+5, 6, 3, 6, 6, 4, 6, 4, 6, 4, 4, 5, 6, 5, 3, 4, 
+5, 6, 4, 4, 5, 5, 5, 4, 4, 5, 6, 5, 4, 6, 5, 5, 
+3, 5, 5, 5, 4, 4, 6, 5, 5, 5, 5, 5, 4, 4, 5, 6, 
+6, 4, 3, 6, 5, 4, 5, 5, 5, 6, 4, 5, 4, 4, 5, 4, 
+6, 5, 5, 4, 5, 5, 4, 5, 6, 5, 5, 5, 4, 5, 4, 5, 
+5, 6, 6, 6, 6, 5, 4, 6, 5, 4, 5, 5, 4, 5, 5, 5, 
+5, 5, 4, 4, 4, 6, 5, 5, 4, 6, 4, 5, 4, 5, 6, 4, 
+5, 5, 6, 3, 5, 5, 5, 5, 4, 4, 5, 6, 5, 6, 5, 5, 
+4, 4, 5, 5, 5, 4, 5, 5, 5, 5, 4, 6, 6, 5, 5, 6, 
+4, 6, 4, 6, 5, 5, 5, 4, 5, 5, 5, 6, 6, 6, 5, 5, 
+4, 5, 5, 4, 5, 5, 7, 5, 4, 4, 6, 5, 6, 5, 6, 5, 
+6, 5, 6, 4, 3, 5, 4, 6, 4, 6, 4, 6, 5, 6, 4, 5, 
+4, 5, 4, 5, 5, 5, 6, 5, 5, 5, 3, 6, 6, 4, 4, 4, 
+5, 6, 5, 4, 6, 5, 6, 5, 6, 4, 5, 6, 5, 4, 5, 4, 
+5, 5, 5, 4, 3, 5, 4, 5, 6, 5, 6, 6, 5, 6, 4, 5, 
+4, 7, 5, 5, 3, 5, 5, 4, 4, 4, 5, 6, 6, 4, 4, 5, 
+4, 6, 5, 4, 5, 4, 6, 5, 5, 3, 4, 6, 5, 5, 5, 5, 
+5, 5, 5, 4, 4, 4, 4, 5, 5, 5, 4, 5, 6, 5, 4, 5, 
+4, 6, 5, 5, 3, 5, 4, 5, 4, 5, 5, 6, 6, 4, 6, 5, 
+5, 4, 5, 4, 5, 4, 5, 6, 5, 4, 5, 4, 5, 6, 5, 5, 
+4, 5, 6, 4, 3, 5, 6, 5, 5, 5, 5, 5, 5, 5, 4, 6, 
+6, 5, 4, 5, 5, 5, 4, 5, 5, 5, 5, 6, 6, 4, 4, 5, 
+6, 5, 6, 5, 5, 4, 5, 5, 6, 4, 6, 5, 7, 4, 4, 5, 
+6, 6, 5, 5, 5, 6, 4, 5, 6, 5, 5, 5, 5, 6, 4, 5, 
+5, 6, 6, 5, 4, 5, 4, 5, 5, 5, 5, 6, 6, 5, 4, 5, 
+4, 4, 5, 5, 5, 5, 5, 5, 4, 4, 4, 5, 6, 4, 4, 4, 
+6, 4, 5, 5, 5, 5, 3, 5, 4, 5, 3, 5, 5, 6, 5, 4, 
+5, 4, 6, 6, 4, 6, 6, 5, 3, 5, 6, 5, 5, 4, 5, 5, 
+5, 6, 5, 6, 6, 4, 5, 5, 4, 6, 5, 4, 5, 5, 4, 4, 
+5, 5, 6, 5, 5, 6, 5, 6, 5, 5, 5, 5, 4, 6, 6, 5, 
+5, 5, 5, 5, 4, 4, 6, 5, 4, 4, 5, 6, 5, 3, 5, 6, 
+5, 6, 5, 6, 6, 4, 6, 5, 5, 5, 5, 5, 4, 5, 5, 5, 
+5, 6, 5, 5, 4, 5, 5, 4, 6, 6, 6, 5, 5, 5, 5, 4, 
+5, 4, 6, 6, 5, 4, 6, 5, 4, 6, 6, 5, 4, 4, 5, 5, 
+6, 6, 6, 5, 6, 5, 4, 5, 6, 5, 5, 3, 6, 5, 2, 6, 
+5, 5, 5, 6, 6, 5, 5, 6, 6, 3, 5, 5, 3, 5, 5, 6, 
+5, 5, 4, 6, 5, 6, 6, 5, 5, 5, 5, 5, 6, 6, 6, 5, 
+4, 7, 5, 4, 6, 6, 5, 5, 4, 5, 6, 4, 5, 6, 5, 5, 
+4, 5, 5, 5, 4, 5, 6, 5, 5, 5, 5, 5, 4, 5, 5, 6
+};
+/* version5: add end */
 
 enum {
     CUBIES = 7,
@@ -31,7 +401,18 @@ typedef struct {
 static const char *const move_names[MOVES] = {"R",  "R2", "R'", "B", "B2",
                                               "B'", "D",  "D2", "D'"};
 static const uint8_t inverse_move[MOVES] = {2, 1, 0, 5, 4, 3, 8, 7, 6};
+
+/* version5: add begin */
+static const uint8_t move_face[MOVES] = {
+    0, 0, 0,   // R, R2, R'
+    1, 1, 1,   // B, B2, B'
+    2, 2, 2    // D, D2, D'
+};
+/* version5: add end */
+
 /* Each destination takes a cubie from source[face][destination]. */
+/* version5: mark */
+/*
 static const uint8_t source[3][CUBIES] = {
     {1, 4, 2, 0, 3, 5, 6},
     {0, 1, 2, 4, 5, 6, 3},
@@ -42,6 +423,36 @@ static const uint8_t twist[3][CUBIES] = {
     {0, 0, 0, 1, 2, 1, 2},
     {0, 0, 0, 0, 0, 0, 0},
 };
+*/
+/* version5: add begin*/
+static const uint8_t move_source[MOVES][CUBIES] = {
+    {1, 4, 2, 0, 3, 5, 6}, // R
+    {4, 3, 2, 1, 0, 5, 6}, // R2
+    {3, 0, 2, 4, 1, 5, 6}, // R'
+
+    {0, 1, 2, 4, 5, 6, 3}, // B
+    {0, 1, 2, 5, 6, 3, 4}, // B2
+    {0, 1, 2, 6, 3, 4, 5}, // B'
+
+    {0, 2, 5, 3, 1, 4, 6}, // D
+    {0, 5, 4, 3, 2, 1, 6}, // D2
+    {0, 4, 1, 3, 5, 2, 6}  // D'
+};
+
+static const uint8_t move_twist[MOVES][CUBIES] = {
+    {1, 2, 0, 2, 1, 0, 0}, // R
+    {0, 0, 0, 0, 0, 0, 0}, // R2
+    {1, 2, 0, 2, 1, 0, 0}, // R'
+
+    {0, 0, 0, 1, 2, 1, 2}, // B
+    {0, 0, 0, 0, 0, 0, 0}, // B2
+    {0, 0, 0, 1, 2, 1, 2}, // B'
+
+    {0, 0, 0, 0, 0, 0, 0}, // D
+    {0, 0, 0, 0, 0, 0, 0}, // D2
+    {0, 0, 0, 0, 0, 0, 0}  // D'
+};
+/* version5: add end*/
 
 /* The three quarter-turns preserve the fixed front-upper-left corner. */
 /*@ requires face < 3;
@@ -51,9 +462,12 @@ static const uint8_t twist[3][CUBIES] = {
     ensures \forall integer i; 0 <= i < CUBIES ==>
               \result.o[i] == (state.o[source[face][i]] + twist[face][i]) % 3;
  */
+/* version5: mark */
+/*
 static state_t quarter_turn(state_t state, uint8_t face)
 {
     state_t result;
+    */
     /*@ loop invariant 0 <= i <= CUBIES;
         loop invariant \forall integer j; 0 <= j < i ==>
           result.p[j] == state.p[source[face][j]];
@@ -62,21 +476,208 @@ static state_t quarter_turn(state_t state, uint8_t face)
         loop assigns i, result.p[0..6], result.o[0..6];
         loop variant CUBIES - i;
     */
+    /* version5: mark */
+    /*
     for (uint8_t i = 0; i < CUBIES; ++i) {
         uint8_t from = source[face][i];
         result.p[i] = state.p[from];
-        result.o[i] = (uint8_t) ((state.o[from] + twist[face][i]) % 3U);
+        // result.o[i] = (uint8_t) ((state.o[from] + twist[face][i]) % 3U); // version5: mark
+        */
+        /* version5: add begin*/
+        /*
+        result.o[i] = (uint8_t) ((state.o[from] + twist[face][i]));
+        if(result.o[i] >= 3){
+            result.o[i] = result.o[i] - 3;
+        }
+        */
+        /* version5: add end*/
+        /*
     }
     return result;
 }
+*/
 
 static state_t apply_move(state_t state, uint8_t move)
 {
+    /* version5: mark */
+    /*
     uint8_t turns = (uint8_t) (move % 3U + 1U);
     for (uint8_t i = 0; i < turns; ++i)
         state = quarter_turn(state, (uint8_t) (move / 3U));
     return state;
+    */
+
+    /* version5: add begin */
+    state_t result;
+
+    for (uint8_t i = 0; i < CUBIES; ++i) {
+        uint8_t from = move_source[move][i];
+        result.p[i] = state.p[from];
+
+        result.o[i] = (uint8_t) ((state.o[from] + move_twist[move][i]));
+
+        if(result.o[i] >= 3){
+            result.o[i] = result.o[i] - 3;
+        }
+    }
+
+    return result;
+    /*
+    switch(move){
+        case 0:
+            return quarter_turn(state, 0);
+        case 1:
+            state = quarter_turn(state, 0);
+            return quarter_turn(state, 0);
+        case 2:
+            state = quarter_turn(state, 0);
+            state = quarter_turn(state, 0);
+            return quarter_turn(state, 0);
+        case 3:
+            return quarter_turn(state, 1);
+        case 4:
+            state = quarter_turn(state, 1);
+            return quarter_turn(state, 1);
+        case 5:
+            state = quarter_turn(state, 1);
+            state = quarter_turn(state, 1);
+            return quarter_turn(state, 1);
+        case 6:
+            return quarter_turn(state, 2);
+        case 7:
+            state = quarter_turn(state, 2);
+            return quarter_turn(state, 2);
+        case 8:
+            state = quarter_turn(state, 2);
+            state = quarter_turn(state, 2);
+            return quarter_turn(state, 2);
+
+        default:
+            return state;
+    }
+    */
+    /* version5: add end */
 }
+
+/* version5: add begin */
+static uint16_t rank_permutation(const state_t *state){
+    uint16_t p = 0;
+    /*
+    for (uint8_t i = 0; i < CUBIES; ++i) {
+        uint8_t smaller = 0;
+        */
+        /*@ loop invariant i + 1 <= j <= CUBIES;
+            loop invariant smaller <= j - i - 1;
+            loop assigns j, smaller;
+            loop variant CUBIES - j;
+         */
+        /*
+        for (uint8_t j = (uint8_t) (i + 1U); j < CUBIES; ++j)
+            if (state->p[j] < state->p[i])
+                ++smaller;
+        // p = p * (CUBIES - i) + smaller;
+
+        switch (i) {
+            case 0:
+                p = (p << 3) - p; // *7
+                break;
+            case 1:
+                p = (p << 2) + (p << 1); // *6
+                break;
+            case 2:
+                p = (p << 2) + p; // *5
+                break;
+            case 3:
+                p = (p << 2); // *4
+                break;
+            case 4:
+                p = (p << 1) + p; // *3
+                break;
+            case 5:
+                p = p << 1; // *2
+                break;
+            case 6:
+                break; // *1
+        }
+
+        p = p + smaller;
+    }
+    */
+
+    // unrolling
+    uint8_t smaller;
+
+    /* i = 0 */
+    smaller = 0;
+    for (uint8_t j = 1; j < CUBIES; ++j)
+        if (state->p[j] < state->p[0])
+            ++smaller;
+    // p = (p << 3) - p + smaller; // p * 7; p = 0
+    p = smaller;
+
+    /* i = 1 */
+    smaller = 0;
+    for (uint8_t j = 2; j < CUBIES; ++j)
+        if (state->p[j] < state->p[1])
+            ++smaller;
+    p = (p << 2) + (p << 1) + smaller; // p * 6
+
+    /* i = 2 */
+    smaller = 0;
+    for (uint8_t j = 3; j < CUBIES; ++j)
+        if (state->p[j] < state->p[2])
+            ++smaller;
+    p = (p << 2) + p + smaller; // p * 5
+
+    /* i = 3 */
+    smaller = 0;
+    for (uint8_t j = 4; j < CUBIES; ++j)
+        if (state->p[j] < state->p[3])
+            ++smaller;    
+    p = (p << 2) + smaller; // p * 4
+
+    /* i = 4 */    
+    smaller = 0;
+    for (uint8_t j = 5; j < CUBIES; ++j)
+        if (state->p[j] < state->p[4])
+            ++smaller;    
+    p = (p << 1) + p + smaller; // p * 3
+
+    /* i = 5 */    
+    smaller = 0;
+    // for (uint8_t j = 6; j < CUBIES; ++j)
+    if (state->p[6] < state->p[5])
+        ++smaller;        
+    p = (p << 1) + smaller; // p * 2
+
+    /* i = 6 */    
+    /*
+    smaller = 0;
+    for (uint8_t j = 7; j < CUBIES; ++j) // CUBIES = 7
+        if (state->p[j] < state->p[6])
+            ++smaller; // smaller = 0
+    p = p + smaller;
+    */
+
+    return p;
+}
+
+static uint16_t rank_orientation(const state_t *state){
+    uint16_t o = 0;
+    /*@ loop invariant 0 <= i <= 6;
+        loop invariant (i == 0 ==> o == 0) && (i == 1 ==> o < 3) &&
+          (i == 2 ==> o < 9) && (i == 3 ==> o < 27) &&
+          (i == 4 ==> o < 81) && (i == 5 ==> o < 243) &&
+          (i == 6 ==> o < 729);
+        loop assigns i, o;
+        loop variant 6 - i;
+     */
+    for (uint8_t i = 0; i < 6; ++i)
+        // o = o * 3U + state->o[i];
+        o = (o << 1) + o + state->o[i];
+    return o;
+}
+/* version5: add end */
 
 /*@ requires \valid_read(state);
     requires \forall integer i; 0 <= i < CUBIES ==>
@@ -89,8 +690,8 @@ static state_t apply_move(state_t state, uint8_t move)
     ensures \result < STATES;
  */
 static uint32_t rank_state(const state_t *state)
-{
-    uint32_t p = 0, o = 0;
+{   
+    // uint32_t p = 0, o = 0; // version5: mark
     /*@ loop invariant 0 <= i <= CUBIES;
         loop invariant (i == 0 ==> p == 0) && (i == 1 ==> p <= 6) &&
           (i == 2 ==> p <= 41) && (i == 3 ==> p <= 209) &&
@@ -99,18 +700,28 @@ static uint32_t rank_state(const state_t *state)
         loop assigns i, p;
         loop variant CUBIES - i;
      */
+    
+    /* version5: mark */
+    /*
     for (uint8_t i = 0; i < CUBIES; ++i) {
         uint8_t smaller = 0;
+        */
+
         /*@ loop invariant i + 1 <= j <= CUBIES;
             loop invariant smaller <= j - i - 1;
             loop assigns j, smaller;
             loop variant CUBIES - j;
          */
+
+        /* version5: mark */
+        /*
         for (uint8_t j = (uint8_t) (i + 1U); j < CUBIES; ++j)
             if (state->p[j] < state->p[i])
                 ++smaller;
         p = p * (CUBIES - i) + smaller;
     }
+    */
+
     /*@ loop invariant 0 <= i <= 6;
         loop invariant (i == 0 ==> o == 0) && (i == 1 ==> o < 3) &&
           (i == 2 ==> o < 9) && (i == 3 ==> o < 27) &&
@@ -119,8 +730,17 @@ static uint32_t rank_state(const state_t *state)
         loop assigns i, o;
         loop variant 6 - i;
      */
+    
+    /* version5: mark */
+    /*
     for (uint8_t i = 0; i < 6; ++i)
         o = o * 3U + state->o[i];
+    */
+
+    /* version5: add begin */
+    uint32_t p = rank_permutation(state);
+    uint32_t o = rank_orientation(state);
+    /* version5: add end */
     return p * ORIENTATIONS + o;
 }
 
@@ -189,7 +809,8 @@ static int valid(const state_t *state)
                 return 0;
         sum = (uint8_t) (sum + state->o[i]);
     }
-    return sum % 3U == 0;
+    return sum == 0 || sum == 3 || sum == 6 || sum == 9 || sum == 12; // version5: add
+    // return sum % 3U == 0; // version5: mark
 }
 
 /* version1: Depth-Limited DFS mark */
@@ -287,12 +908,29 @@ static int parse_state(const char *input, state_t *state)
         loop assigns i, state->p[0..6], state->o[0..6];
         loop variant 14 - i;
      */
+    /* version5: mark */
+    /*
     for (int i = 0; i < 14; ++i) {
         int limit = i < 7 ? 7 : 3;
         if (input[i] < '1' || input[i] > '0' + limit)
             return 0;
         (i < 7 ? state->p : state->o)[i % 7] = (uint8_t) (input[i] - '1');
     }
+    */
+
+    /* version5: add begin */
+    for (uint8_t i = 0; i < CUBIES; ++i) {
+        if (input[i] < '1' || input[i] > '7')
+            return 0;
+
+        if (input[7 + i] < '1' || input[7 + i] > '3')
+            return 0;
+
+        state->p[i] = (uint8_t) (input[i] - '1');
+        state->o[i] = (uint8_t) (input[7 + i] - '1');
+    }
+    /* version5: add end */
+
     return input[14] == '\0' && valid(state);
 }
 
@@ -325,6 +963,8 @@ static int self_test(void)
 }
 
 /* version3: PDB heuristic and IDA* add begin */
+/* version5: mark*/
+/*
 // orientation table
 static uint8_t *build_orientation_table(uint8_t *diameter)
 {
@@ -453,13 +1093,17 @@ static uint8_t *build_permutation_table(uint8_t *diameter)
     }
     return permutation_dist;
 }
+*/
 
-static uint8_t heuristic(const state_t *state, const uint8_t *orientation_table, const uint8_t *permutation_table){
+// static uint8_t heuristic(const state_t *state, const uint8_t *orientation_table, const uint8_t *permutation_table){ // version5: mark
+static uint8_t heuristic(const uint16_t p, const uint16_t o, const uint8_t *orientation_table, const uint8_t *permutation_table){ // version5: add
+    /* version5: mark */
+    /*
     uint32_t rank = rank_state(state);
     
     uint16_t p = (uint16_t)(rank / ORIENTATIONS);
     uint16_t o = (uint16_t)(rank % ORIENTATIONS);
-    
+    */
     
     uint8_t heuristic_p = permutation_table[p];
     uint8_t heuristic_o = orientation_table[o];
@@ -518,7 +1162,7 @@ typedef struct {
     uint8_t next_move;
 } dfs_frame_t;
 
-static int depth_limit_dfs_iterative(state_t state, uint8_t limit, const uint8_t *orientation_table, const uint8_t *permutation_table)
+static int depth_limit_dfs_iterative(state_t state, uint8_t limit, const uint8_t *orientation_table,const uint8_t *permutation_table)
 {
     dfs_frame_t stack[12];
     stack[0].state = state;
@@ -529,28 +1173,37 @@ static int depth_limit_dfs_iterative(state_t state, uint8_t limit, const uint8_t
     while(1){
         // 1. solved?
         //     -> return 1;
-        if(rank_state(&stack[depth].state) == 0){
-            solution_depth = depth;
-            return 1;
-        }
-        // 2. depth limit / heuristic pruning
-        //     if depth == 0: return 0;
-        //     -> pop; continue
-        if(depth == limit){
-            if(depth == 0){
-                return 0;
+        /* version5: add begin */
+        if(stack[depth].next_move == 0){
+            uint16_t p = rank_permutation(&stack[depth].state);
+            uint16_t o = rank_orientation(&stack[depth].state);
+            if (p == 0 && o == 0){
+            /* version5: add end */
+            // if(rank_state(&stack[depth].state) == 0){ // versoin5: mark
+                solution_depth = depth;
+                return 1;
             }
-            // pop
-            --depth;
-            continue;
-        }
-        if(heuristic(&stack[depth].state, orientation_table, permutation_table) + depth > limit){
-            // pop
-            if(depth == 0){
-                return 0;
+            // 2. depth limit / heuristic pruning
+            //     if depth == 0: return 0;
+            //     -> pop; continue
+            if(depth == limit){
+                if(depth == 0){
+                    return 0;
+                }
+                // pop
+                --depth;
+                continue;
             }
-            --depth;
-            continue;
+
+            // if(heuristic(&stack[depth].state, orientation_table, permutation_table) + depth > limit){ // version5: mark
+            if(heuristic(p, o, orientation_table, permutation_table) + depth > limit){ // version5: add
+                // pop
+                if(depth == 0){
+                    return 0;
+                }
+                --depth;
+                continue;
+            }
         }
         // 3. 9 moves 都試完?
         //     -> true
@@ -569,10 +1222,12 @@ static int depth_limit_dfs_iterative(state_t state, uint8_t limit, const uint8_t
         
         // move pruning // 先把目前要試的 move 存起來
         uint8_t move = stack[depth].next_move;
-        if (depth > 0 && move / 3 == path[depth - 1] / 3) {
+        // if (depth > 0 && move / 3 == path[depth - 1] / 3) { version5: mark
+        if(depth > 0 && move_face[move] == move_face[path[depth - 1]]){ // version5: add
             stack[depth].next_move++;
             continue;
         }
+        
 
         path[depth] = move;
 
@@ -594,8 +1249,11 @@ int main(int argc, char **argv)
     state_t state;
     //uint8_t diameter; /* version1: Depth-Limited DFS mark */
     /* version3: PDB heuristic and IDA* add begin */
+    /* version5: mark*/
+    /*
     uint8_t orientation_diameter;
     uint8_t permutation_diameter;
+    */
     /* version3: PDB heuristic and IDA* add end */
 
     if (argc == 2 && !strcmp(argv[1], "--self-test")) {
@@ -618,7 +1276,31 @@ int main(int argc, char **argv)
         puts("3674160 states; diameter 11");
         */
 
+        /* version5: add begin */
+        /* version5: mark */
+        /*
+        // check pdb table
+        uint8_t *orientation_runtime = build_orientation_table(&orientation_diameter);
+        uint8_t *permutation_runtime = build_permutation_table(&permutation_diameter);
+        for (uint16_t i = 0; i < ORIENTATIONS; ++i) {
+            if (orientation_runtime[i] != orientation_table[i]) {
+                printf("orientation mismatch at %u\n", i);
+                return 1;
+            }
+        }
+        for (uint16_t i = 0; i < PERMUTATIONS; ++i) {
+            if (permutation_runtime[i] != permutation_table[i]) {
+                printf("permutation mismatch at %u\n", i);
+                return 1;
+            }
+        }
+        puts("PDB tables match");
+        */
+        /* version5: add end */
+
         /* version3: PDB heuristic and IDA* add begin */
+        /* version5: mark */
+        /*
         uint8_t *orientation_table = build_orientation_table(&orientation_diameter);
         if (!orientation_table) {
             fputs("could not build complete state orientation table\n", stderr);
@@ -633,7 +1315,7 @@ int main(int argc, char **argv)
         }
         free(orientation_table);
         free(permutation_table);
-
+        
         if (orientation_diameter != 6) {
             fputs("orientation diameter check failed\n", stderr);
             return 1;
@@ -643,6 +1325,7 @@ int main(int argc, char **argv)
             return 1;
         }
         puts("orientation_diameter 6; permutation_diameter 7");
+        */
         /* version3: PDB heuristic and IDA* add end */
 
         // puts("self-test passed"); /* version1: Depth-Limited DFS add */ // version3: PDB heuristic and IDA* mark
@@ -674,6 +1357,8 @@ int main(int argc, char **argv)
     */
 
     /* version3: PDB heuristic and IDA* add begin */
+    /* version5: mark */
+    /*
     uint8_t *orientation_table = build_orientation_table(&orientation_diameter);
     if (!orientation_table) {
         fputs("could not build complete state orientation table\n", stderr);
@@ -686,8 +1371,9 @@ int main(int argc, char **argv)
         free(orientation_table);
         return 1;
     }
+    */
     /* version3: PDB heuristic and IDA* add end */
-
+    
     /* version1: Depth-Limited DFS add begin */
     //uint8_t limit = 11; /* version2: IDDFS and move pruning mark */
     int found = 0; /* version2: IDDFS and move pruning add */
@@ -700,7 +1386,13 @@ int main(int argc, char **argv)
         if(depth_limit_dfs(state, 0, limit)){ 
     */
     /* version3: PDB heuristic and IDA* add begin */
-    uint8_t start = heuristic(&state, orientation_table, permutation_table);
+    
+    /* version5: add begin */
+    uint16_t start_p = rank_permutation(&state);
+    uint16_t start_o = rank_orientation(&state);
+    uint8_t start = heuristic(start_p, start_o, orientation_table, permutation_table);
+    /* version5: add end */
+    // uint8_t start = heuristic(&state, orientation_table, permutation_table); // version5: mark
     for (uint8_t limit = start; limit <= 11; ++limit){
         // if(depth_limit_dfs(state, 0, limit, orientation_table, permutation_table)){ // version4: iterative DFS with explicit stack mark
         if(depth_limit_dfs_iterative(state, limit, orientation_table, permutation_table)){ // version4: iterative DFS with explicit stack add
@@ -719,8 +1411,11 @@ int main(int argc, char **argv)
     }
 
     /* version3: PDB heuristic and IDA* add begin */
+    /* version5: mark*/
+    /*
     free(orientation_table);
     free(permutation_table);
+    */
     /* version3: PDB heuristic and IDA* add end */
 
     /* version2: IDDFS and move pruning add end */
@@ -741,4 +1436,3 @@ int main(int argc, char **argv)
     /* version1: Depth-Limited DFS add end */
     return output_failed();
 }
-    
