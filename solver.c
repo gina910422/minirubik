@@ -1,6 +1,7 @@
 // Version 1 - 2026/09/30: Replace the BFS table-based solver with Depth-Limited DFS
 // Version 2 - 2026/09/30: Add IDDFS with same-face move pruning
 // Version 3 - 2026/10/01: Add orientation/permutation pattern databases and convert IDDFS to IDA*
+// Version 4 - 2026/10/02: Replace recursive IDA* DFS with an explicit stack
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -470,10 +471,11 @@ static uint8_t heuristic(const state_t *state, const uint8_t *orientation_table,
 static uint8_t path[11];
 static uint8_t solution_depth;
 
-
 // static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit){ // version3: PDB heuristic and IDA* mark
+/* version4: iterative DFS with explicit stack mark*/
+/*
 static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit, uint8_t *orientation_table, uint8_t *permutation_table){ // version3: PDB heuristic and IDA* add
-    //1. sloved?
+    //1. solved?
     if(rank_state(&state) == 0){
         solution_depth = depth; //找到答案時，記錄用了幾步
         return 1;
@@ -483,20 +485,19 @@ static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit, uint8_t 
         return 0;
     }
     
-    /* version3: PDB heuristic and IDA* add begin */
+    // version3: PDB heuristic and IDA* add begin
     if(heuristic(&state, orientation_table, permutation_table) + depth > limit){
         return 0;
     }
-    /* version3: PDB heuristic and IDA* add end */
+    // version3: PDB heuristic and IDA* add end
 
     //3. try 9 moves
     for(uint8_t move = 0; move < MOVES; ++move){
-        /* Version2: IDDFS and move pruning add begin */
-        if (depth > 0 &&
-            move / 3 == path[depth - 1] / 3) {
+        // Version2: IDDFS and move pruning add begin
+        if (depth > 0 && move / 3 == path[depth - 1] / 3) {
             continue;
         }
-        /* Version2: IDDFS and move pruning add end */
+        // Version2: IDDFS and move pruning add end 
         state_t next = apply_move(state, move); //把「move 編號 0~8」轉成：哪個面 + 做幾次 quarter turn
         path[depth] = move;
         // 繼續往下一層搜尋
@@ -508,7 +509,85 @@ static int depth_limit_dfs(state_t state, uint8_t depth, uint8_t limit, uint8_t 
     //9 個 move 都失敗
     return 0;
 }
+*/
 /* version1: Depth-Limited DFS add end */
+
+/* version4: iterative DFS with explicit stack add begin*/
+typedef struct {
+    state_t state;
+    uint8_t next_move;
+} dfs_frame_t;
+
+static int depth_limit_dfs_iterative(state_t state, uint8_t limit, const uint8_t *orientation_table, const uint8_t *permutation_table)
+{
+    dfs_frame_t stack[12];
+    stack[0].state = state;
+    stack[0].next_move = 0;
+    uint8_t depth = 0;
+    
+    //while loop:
+    while(1){
+        // 1. solved?
+        //     -> return 1;
+        if(rank_state(&stack[depth].state) == 0){
+            solution_depth = depth;
+            return 1;
+        }
+        // 2. depth limit / heuristic pruning
+        //     if depth == 0: return 0;
+        //     -> pop; continue
+        if(depth == limit){
+            if(depth == 0){
+                return 0;
+            }
+            // pop
+            --depth;
+            continue;
+        }
+        if(heuristic(&stack[depth].state, orientation_table, permutation_table) + depth > limit){
+            // pop
+            if(depth == 0){
+                return 0;
+            }
+            --depth;
+            continue;
+        }
+        // 3. 9 moves 都試完?
+        //     -> true
+        //         if depth == 0: return 0;
+        //         -> pop; continue
+        //     -> false
+        //         -> push next state
+        if(stack[depth].next_move >= MOVES){   
+            // pop
+            if(depth == 0){
+                return 0;
+            }
+            --depth;
+            continue;
+        }
+        
+        // move pruning // 先把目前要試的 move 存起來
+        uint8_t move = stack[depth].next_move;
+        if (depth > 0 && move / 3 == path[depth - 1] / 3) {
+            stack[depth].next_move++;
+            continue;
+        }
+
+        path[depth] = move;
+
+        // 算 next state
+        state_t next_state = apply_move(stack[depth].state, move);
+        // 更新當前 next move
+        stack[depth].next_move++;
+
+        // push
+        ++depth;
+        stack[depth].state = next_state;
+        stack[depth].next_move = 0;
+    }
+}
+/* version4: iterative DFS with explicit stack add end*/
 
 int main(int argc, char **argv)
 {
@@ -623,7 +702,8 @@ int main(int argc, char **argv)
     /* version3: PDB heuristic and IDA* add begin */
     uint8_t start = heuristic(&state, orientation_table, permutation_table);
     for (uint8_t limit = start; limit <= 11; ++limit){
-        if(depth_limit_dfs(state, 0, limit, orientation_table, permutation_table)){ 
+        // if(depth_limit_dfs(state, 0, limit, orientation_table, permutation_table)){ // version4: iterative DFS with explicit stack mark
+        if(depth_limit_dfs_iterative(state, limit, orientation_table, permutation_table)){ // version4: iterative DFS with explicit stack add
     /* version3: PDB heuristic and IDA* add end */
             for(uint8_t i = 0; i < solution_depth; ++i){
                 printf("%s%s", separator, move_names[path[i]]);
@@ -661,3 +741,4 @@ int main(int argc, char **argv)
     /* version1: Depth-Limited DFS add end */
     return output_failed();
 }
+    
