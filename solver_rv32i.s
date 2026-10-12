@@ -1,3 +1,12 @@
+# 定義常數和圖片資料
+.equ  RED,    0xFF0000
+.equ  GREEN,  0x00FF00
+.equ  BLUE,   0x0000FF
+.equ  WHITE,  0xFFFFFF
+.equ  YELLOW, 0xFFFF00
+.equ  ORANGE, 0xFFA500
+.equ  DELAY,  8192
+
     .data
 
 input_state:
@@ -424,9 +433,69 @@ msg_newline:
 msg_not_found:
     .asciz "not found\n"
 
+# 第 i 個 facelet 現在是什麼顏色
+visual_facelets:
+    .byte 0,0,0,0        # U = WHITE
+    .byte 1,1,1,1        # D = YELLOW
+    .byte 2,2,2,2        # F = GREEN
+    .byte 3,3,3,3        # B = BLUE
+    .byte 4,4,4,4        # L = ORANGE
+    .byte 5,5,5,5        # R = RED
+
+# RGB lookup table
+led_colors:
+    .word WHITE
+    .word YELLOW
+    .word GREEN
+    .word BLUE
+    .word ORANGE
+    .word RED
+
+# 第 i 個 facelet 要畫到 LED Matrix 的哪個位置
+facelet_xy:
+    .byte  9, 0,   13, 0,     9, 3,   13, 3      # U
+    .byte  9,14,   13,14,     9,17,   13,17      # D
+    .byte  9, 7,   13, 7,     9,10,   13,10      # F
+    .byte 27, 7,   31, 7,    27,10,   31,10      # B
+    .byte  0, 7,    4, 7,     0,10,    4,10      # L
+    .byte 18, 7,   22, 7,    18,10,   22,10      # R
+
+led_move_R:
+    .byte 0,9,2,11, 4,14,6,12, 8,5,10,7, 3,13,1,15, 16,17,18,19, 22,20,23,21
+led_move_R2:
+    .byte 0,5,2,7, 4,1,6,3, 8,14,10,12, 11,13,9,15, 16,17,18,19, 23,22,21,20
+led_move_Rp:
+    .byte 0,14,2,12, 4,9,6,11, 8,1,10,3, 7,13,5,15, 16,17,18,19, 21,23,20,22
+
+led_move_B:
+    .byte 21,23,2,3, 4,5,16,18, 8,9,10,11, 14,12,15,13, 1,17,0,19, 20,7,22,6
+led_move_B2:
+    .byte 7,6,2,3, 4,5,1,0, 8,9,10,11, 15,14,13,12, 23,17,21,19, 20,18,22,16
+led_move_Bp:
+    .byte 18,16,2,3, 4,5,23,21, 8,9,10,11, 13,15,12,14, 6,17,7,19, 20,0,22,1
+
+led_move_D:
+    .byte 0,1,2,3, 6,4,7,5, 8,9,18,19, 12,13,22,23, 16,17,14,15, 20,21,10,11
+led_move_D2:
+    .byte 0,1,2,3, 7,6,5,4, 8,9,14,15, 12,13,10,11, 16,17,22,23, 20,21,18,19
+led_move_Dp:
+    .byte 0,1,2,3, 5,7,4,6, 8,9,22,23, 12,13,18,19, 16,17,10,11, 20,21,14,15
+
+led_move_index:
+    .word led_move_R
+    .word led_move_R2
+    .word led_move_Rp
+    .word led_move_B
+    .word led_move_B2
+    .word led_move_Bp
+    .word led_move_D
+    .word led_move_D2
+    .word led_move_Dp
+
+inverse_move:
+    .byte 2,1,0,5,4,3,8,7,6
 
 .bss
-
 
 state:
     .zero 14
@@ -437,6 +506,8 @@ path:
 solution_depth:
     .byte 0
 
+visual_tmp:
+    .zero 24
 
     .text
 
@@ -1314,7 +1385,8 @@ loop_for_depth_limit_dfs_iterative:
     mv      a3, s3
     jal     ra, depth_limit_dfs_iterative
     
-    bne     a0, zero, print
+    # bne     a0, zero, print
+    bne     a0, zero, solution
 
     addi    s0, s0, 1
     j       loop_for_depth_limit_dfs_iterative
@@ -1413,3 +1485,220 @@ output_failed:
     li      a0, 0
     li      a7, 10
     ecall
+
+
+solution:
+    la      s0, LED_MATRIX_0_BASE     # s0 = LED Matrix 起始位址
+    li      t0, LED_MATRIX_0_SIZE
+    add     s2, s0, t0                # s2 = framebuffer 終點
+    li      t0, LED_MATRIX_0_WIDTH
+    slli    s1, t0, 2                 # s1 = stride = WIDTH * 4 bytes
+
+    la      s3, visual_facelets
+    la      s4, led_colors
+    la      s5, facelet_xy
+
+    la      s6, led_move_index
+
+    la      s7, path
+    
+    la      t0, solution_depth
+    lbu     s8, 0(t0)          # s8 = solution_depth
+
+    beqz    s8, solved
+
+    la      s9, inverse_move
+
+    add     s10, s7, s8
+    addi    s10, s10, -1
+
+reverse_loop:
+    lbu     t6, 0(s10)      # t6 = path[i]
+    
+    add     t0, s9, t6      # t6 = inverse_move[path[i]]
+    lbu     t6, 0(t0)
+
+    slli    t0, t6, 2       # path
+    add     t0, s6, t0
+    lw      a0, 0(t0)    
+    jal     apply_visual_move
+
+    addi    s10, s10, -1
+    addi    s8, s8, -1
+    bnez    s8, reverse_loop
+
+    li      t4, 0
+    li      t5, 24
+
+draw_cube:
+    add     t0, s3, t4      # t0 = visual_facelets + i
+    lbu     t1, 0(t0)       # t1 = visual_facelets[i]
+
+    slli    t0, t1, 2       # offset = color_id * 4
+    add     t0, s4, t0      # t0 = led_colors + offset
+    lw      a2, 0(t0)       # a2 = led_colors[offset]
+
+    slli    t0, t4, 1       # offset = i * 2
+    add     t0, s5, t0      # t0 = facelet_xy + offset
+    lbu     a0, 0(t0)       # a0 = x
+    lbu     a1, 1(t0)       # a1 = y
+
+    jal     ra, draw_facelet
+
+    addi    t4, t4, 1
+    bne     t4, t5, draw_cube
+
+    jal     ra, delay
+
+    la      t0, solution_depth
+    lbu     s8, 0(t0)       # s8 = solution_depth    
+
+path_loop:
+    # repeat solution_depth times
+    lbu     t6, 0(s7)
+    addi    s7, s7, 1
+
+    slli    t0, t6, 2       # path
+    add     t0, s6, t0
+    lw      a0, 0(t0)
+    jal     apply_visual_move
+
+    li      t4, 0
+    li      t5, 24
+
+draw:
+    add     t0, s3, t4      # t0 = visual_facelets + i
+    lbu     t1, 0(t0)       # t1 = visual_facelets[i]
+
+    slli    t0, t1, 2       # offset = color_id * 4
+    add     t0, s4, t0      # t0 = led_colors + offset
+    lw      a2, 0(t0)       # a2 = led_colors[offset]
+
+    slli    t0, t4, 1       # offset = i * 2
+    add     t0, s5, t0      # t0 = facelet_xy + offset
+    lbu     a0, 0(t0)       # a0 = x
+    lbu     a1, 1(t0)       # a1 = y
+
+    jal     ra, draw_facelet
+
+    addi    t4, t4, 1
+    bne     t4, t5, draw
+    
+    jal     delay
+
+    addi    s8, s8, -1
+    bnez    s8, path_loop
+
+    j       done
+    
+solved:
+    li      t4, 0
+    li      t5, 24
+
+solved_draw:
+    add     t0, s3, t4
+    lbu     t1, 0(t0)
+
+    slli    t0, t1, 2
+    add     t0, s4, t0
+    lw      a2, 0(t0)
+
+    slli    t0, t4, 1
+    add     t0, s5, t0
+    lbu     a0, 0(t0)
+    lbu     a1, 1(t0)
+
+    jal     ra, draw_facelet
+
+    addi    t4, t4, 1
+    bne     t4, t5, solved_draw
+
+    jal     ra, delay
+
+    j       done
+
+done:
+    j       print
+
+apply_visual_move:
+    la      t5, visual_tmp
+    li      t2, 0            # i = 0
+
+move:
+    # source = move_R[i]
+    add     t3, a0, t2
+    lbu     t0, 0(t3)
+
+    # color = visual_facelets[source]
+    add     t3, s3, t0
+    lbu     t1, 0(t3)
+
+    # visual_tmp[i] = color
+    add     t3, t5, t2
+    sb      t1, 0(t3)
+
+    addi    t2, t2, 1
+    li      t4, 24
+    bne     t2, t4, move
+
+    li      t2, 0          # i = 0
+
+copy_back:
+    add     t3, t5, t2     # t3 = &visual_tmp[i]
+    lbu     t0, 0(t3)      # t0 = visual_tmp[i]
+
+    add     t3, s3, t2     # t3 = &visual_facelets[i]
+    sb      t0, 0(t3)      # visual_facelets[i] = t0
+
+    addi    t2, t2, 1
+    li      t4, 24
+    bne     t2, t4, copy_back
+
+    ret
+
+
+draw_facelet:
+    # address = BASE + (y * 35 + x) * 4
+    mv      t2, s0          # t2 = LED_BASE
+    mv      t0, a1
+    beqz    t0, at_row
+# 往下走 INIT_Y 列
+skip_row:
+    add     t2, t2, s1      # 往下走 1 列
+    addi    t0, t0, -1
+    bnez    t0, skip_row
+# 往右走 INIT_X 格
+at_row: 
+    mv      t0, a0
+    slli    t0, t0, 2       # 往右走 INIT_X * 4 bytes 
+    add     t2, t2, t0    
+
+    mv      a0, a2
+    mv      a1, t2
+# 把 4×3 圖畫上去
+facelet:
+    li      t0, 3           # 還有 3 列要畫
+    mv      t1, a1          # t1 = 目前這一列的起始位址
+facelet_row:
+    li      t2, 4           # 每列還有 4 顆要畫
+    mv      t3, t1          # t3 = 目前 pixel 位址
+facelet_col:
+    sw      a0, 0(t3)       # a0 = color 寫到 LED Matrix
+    
+    addi    t3, t3, 4       # t3 = 下一個 pixel 位址
+
+    addi    t2, t2, -1
+    bnez    t2, facelet_col
+
+    add     t1, t1, s1      # t1 = 下一列起始位址
+    addi    t0, t0, -1
+    bnez    t0, facelet_row
+
+    ret
+
+delay:
+    li    t0, DELAY
+delay_loop:
+    addi  t0, t0, -1
+    bnez  t0, delay_loop
+    ret
