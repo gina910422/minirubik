@@ -1,5 +1,7 @@
+    .data
+
 input_state:
-    .asciz "25314672313211"
+    .asciz "21345671111111"
 
 move_R:   .asciz "R"
 move_R2:  .asciz "R2"
@@ -443,282 +445,249 @@ solution_depth:
     .globl apply_move
 
 apply_move:
-    li      t0, 3
-    la      t1, move_source
-    la      t2, move_twist
-
+    la      a3, move_source
     # move_source[move][i] = move_source + (a1 * 7 + i)
-    slli    t3, a1, 3       # t1 = a1 * 8
-    sub     t3, t3, a1      # t1 = t1 - a1
-    add     t1, t1, t3      # move_source + (a1 * 7)
-    add     t2, t2, t3      # move_twist + (a1 * 7)
+    slli    t0, a1, 3       # t0 = a1 * 8
+    sub     t0, t0, a1      # t0 = t0 - a1
+    add     a3, a3, t0      # move_source + move * 7
 
-    # i = 0
-    lbu     t3, 0(t1)       # load move_source[move][0]
-    lbu     t4, 0(t2)       # load move_twist[move][0]
+    lbu     t0, 0(a3)       # load move_source[move][0]
+    lbu     t1, 1(a3)       # load move_source[move][1]
+    lbu     t2, 2(a3)
+    lbu     t3, 3(a3)
+    lbu     t4, 4(a3)
+    lbu     t5, 5(a3)
+    lbu     t6, 6(a3)
 
-    add     t3, a0, t3      # state + from
-    lbu     t5, 0(t3)       # load state->p[from]
-    lbu     t6, 7(t3)       # load state->o[from]
+    add     t0, a0, t0      # state + move_source[move][0]
+    add     t1, a0, t1      # state + move_source[move][1]
+    add     t2, a0, t2
+    add     t3, a0, t3
+    add     t4, a0, t4
+    add     t5, a0, t5
+    add     t6, a0, t6
 
-    add     t6, t6, t4      # state->o[from] + move_twist[move][i]
+    # permutation
+    lbu     a4, 0(t0)       # load state.p[move_source[move][0]]
+    sb      a4, 0(a2)       # store state->p[0]
 
-    bltu    t6, t0, no_sub3_0
-    addi    t6, t6, -3
+    lbu     a4, 0(t1)       # load state.p[move_source[move][1]]
+    sb      a4, 1(a2)       # store state->p[1]
 
+    lbu     a4, 0(t2)
+    sb      a4, 2(a2)
+
+    lbu     a4, 0(t3)
+    sb      a4, 3(a2)
+
+    lbu     a4, 0(t4)
+    sb      a4, 4(a2)
+
+    lbu     a4, 0(t5)
+    sb      a4, 5(a2)
+
+    lbu     a4, 0(t6)
+    sb      a4, 6(a2)
+
+    # orientation
+    lbu     t0, 7(t0)       # load state.o[move_source[move][0]]
+    lbu     t1, 7(t1)       # load state.o[move_source[move][1]]
+    lbu     t2, 7(t2)
+    lbu     t3, 7(t3)
+    lbu     t4, 7(t4)
+    lbu     t5, 7(t5)
+    lbu     t6, 7(t6)
+
+    # move = R R' B B'
+    beq     a1, zero, R
+
+    li      a5, 2
+    beq     a1, a5, R
+
+    li      a5, 3
+    beq     a1, a5, B
+
+    li      a5, 5
+    beq     a1, a5, B
+    
+    j       store_orientation
+R:  
+    li      a5, 3
+    addi    t0, t0, 1      # state.o[move_source[move][0]] + move_twist[move][0]
+    bltu    t0, a5, no_sub3_0
+    addi    t0, t0, -3
 no_sub3_0:
-    sb      t5, 0(a2)       # store result->p[0]
-    sb      t6, 7(a2)       # store result->o[0]
-
-    # i = 1
-    lbu     t3, 1(t1)
-    lbu     t4, 1(t2)
-
-    add     t3, a0, t3
-    lbu     t5, 0(t3)
-    lbu     t6, 7(t3)
-
-    add     t6, t6, t4
-
-    bltu    t6, t0, no_sub3_1
-    addi    t6, t6, -3
-
+    addi    t1, t1, 2
+    bltu    t1, a5, no_sub3_1
+    addi    t1, t1, -3
 no_sub3_1:
-    sb      t5, 1(a2)
-    sb      t6, 8(a2)
-
-    # i = 2
-    lbu     t3, 2(t1)
-    lbu     t4, 2(t2)
-
-    add     t3, a0, t3
-    lbu     t5, 0(t3)
-    lbu     t6, 7(t3)
-
-    add     t6, t6, t4
-
-    bltu    t6, t0, no_sub3_2
-    addi    t6, t6, -3
-
+    addi    t3, t3, 2
+    bltu    t3, a5, no_sub3_2
+    addi    t3, t3, -3
 no_sub3_2:
-    sb      t5, 2(a2)
-    sb      t6, 9(a2)
-
-    # i = 3
-    lbu     t3, 3(t1)
-    lbu     t4, 3(t2)
-
-    add     t3, a0, t3
-    lbu     t5, 0(t3)
-    lbu     t6, 7(t3)
-
-    add     t6, t6, t4
-
-    bltu    t6, t0, no_sub3_3
-    addi    t6, t6, -3
-
+    addi    t4, t4, 1
+    bltu    t4, a5, store_orientation
+    addi    t4, t4, -3
+    j       store_orientation
+B:
+    li      a5, 3
+    addi    t3, t3, 1
+    bltu    t3, a5, no_sub3_3
+    addi    t3, t3, -3
 no_sub3_3:
-    sb      t5, 3(a2)
-    sb      t6, 10(a2)
-
-    # i = 4
-    lbu     t3, 4(t1)
-    lbu     t4, 4(t2)
-
-    add     t3, a0, t3
-    lbu     t5, 0(t3)
-    lbu     t6, 7(t3)
-
-    add     t6, t6, t4
-
-    bltu    t6, t0, no_sub3_4
-    addi    t6, t6, -3
-
+    addi    t4, t4, 2
+    bltu    t4, a5, no_sub3_4
+    addi    t4, t4, -3
 no_sub3_4:
-    sb      t5, 4(a2)
-    sb      t6, 11(a2)
-
-    # i = 5
-    lbu     t3, 5(t1)
-    lbu     t4, 5(t2)
-
-    add     t3, a0, t3
-    lbu     t5, 0(t3)
-    lbu     t6, 7(t3)
-
-    add     t6, t6, t4
-
-    bltu    t6, t0, no_sub3_5
-    addi    t6, t6, -3
-
+    addi    t5, t5, 1
+    bltu    t5, a5, no_sub3_5
+    addi    t5, t5, -3
 no_sub3_5:
-    sb      t5, 5(a2)
-    sb      t6, 12(a2)
-
-    # i = 6
-    lbu     t3, 6(t1)
-    lbu     t4, 6(t2)
-
-    add     t3, a0, t3
-    lbu     t5, 0(t3)
-    lbu     t6, 7(t3)
-
-    add     t6, t6, t4
-
-    bltu    t6, t0, no_sub3_6
+    addi    t6, t6, 2
+    bltu    t6, a5, store_orientation
     addi    t6, t6, -3
 
-no_sub3_6:
-    sb      t5, 6(a2)
+store_orientation:
+    sb      t0, 7(a2)       # load state->o[0]
+    sb      t1, 8(a2)       # load state->o[1]
+    sb      t2, 9(a2)
+    sb      t3, 10(a2)
+    sb      t4, 11(a2)
+    sb      t5, 12(a2)
     sb      t6, 13(a2)
-
+    
     ret
 
 
     .globl rank_permutation
 
 rank_permutation:
-    li      t0, 0           # p = 0
-    li      t1, 0           # smaller = 0
+    # load all
+    lbu     t0, 0(a0)
+    lbu     t1, 1(a0)
+    lbu     t2, 2(a0)
+    lbu     t3, 3(a0)
+    lbu     t4, 4(a0)
+    lbu     t5, 5(a0)
+    lbu     t6, 6(a0)
+
+    li      a0, 0           # p = 0
+    li      a1, 0           # smaller = 0
 
     # i = 0
-    lbu     t2, 0(a0)       # load state->p[0]
     # j = 1
-    lbu     t3, 1(a0)       # load state->p[1]
-    bgeu    t3, t2, skip1   # if p[j] >= p[i], skip
-    addi    t0, t0, 1
+    bgeu    t1, t0, skip1   # if p[j] >= p[i], skip
+    addi    a0, a0, 1
 skip1: 
     # j = 2
-    lbu     t3, 2(a0)       # load state->p[2]
-    bgeu    t3, t2, skip2   # if p[j] >= p[i], skip
-    addi    t0, t0, 1
+    bgeu    t2, t0, skip2   # if p[j] >= p[i], skip
+    addi    a0, a0, 1
 skip2: 
     # j = 3
-    lbu     t3, 3(a0)       # load state->p[3]
-    bgeu    t3, t2, skip3   # if p[j] >= p[i], skip
-    addi    t0, t0, 1
+    bgeu    t3, t0, skip3   # if p[j] >= p[i], skip
+    addi    a0, a0, 1
 skip3: 
     # j = 4
-    lbu     t3, 4(a0)  
-    bgeu    t3, t2, skip4
-    addi    t0, t0, 1
+    bgeu    t4, t0, skip4
+    addi    a0, a0, 1
 skip4: 
     # j = 5
-    lbu     t3, 5(a0)  
-    bgeu    t3, t2, skip5
-    addi    t0, t0, 1
+    bgeu    t5, t0, skip5
+    addi    a0, a0, 1
 skip5: 
     # j = 6
-    lbu     t3, 6(a0)  
-    bgeu    t3, t2, skip6
-    addi    t0, t0, 1
+    bgeu    t6, t0, skip6
+    addi    a0, a0, 1
 
 skip6:
     # i = 1
-    lbu     t2, 1(a0)
     # j = 2
-    lbu     t3, 2(a0)
-    bgeu    t3, t2, skip7
-    addi    t1, t1, 1
+    bgeu    t2, t1, skip7
+    addi    a1, a1, 1
 skip7: 
     # j = 3
-    lbu     t3, 3(a0)
-    bgeu    t3, t2, skip8
-    addi    t1, t1, 1
+    bgeu    t3, t1, skip8
+    addi    a1, a1, 1
 skip8: 
     # j = 4
-    lbu     t3, 4(a0)  
-    bgeu    t3, t2, skip9
-    addi    t1, t1, 1
+    bgeu    t4, t1, skip9
+    addi    a1, a1, 1
 skip9: 
     # j = 5
-    lbu     t3, 5(a0)  
-    bgeu    t3, t2, skip10
-    addi    t1, t1, 1
+    bgeu    t5, t1, skip10
+    addi    a1, a1, 1
 skip10: 
     # j = 6
-    lbu     t3, 6(a0)  
-    bgeu    t3, t2, skip11
-    addi    t1, t1, 1
-skip11:
-    slli    t3, t0, 2
-    slli    t4, t0, 1
-    add     t0, t1, t3
-    add     t0, t0, t4
+    bgeu    t6, t1, skip11
+    addi    a1, a1, 1
+skip11: 
+    slli    a2, a0, 1
+    add     a1, a2, a1
+    slli    a0, a0, 2
+    add     a0, a0, a1
+
     # i = 2
-    li t1, 0
-    lbu     t2, 2(a0)
+    li      a1, 0
     # j = 3
-    lbu     t3, 3(a0)
     bgeu    t3, t2, skip12
-    addi    t1, t1, 1
+    addi    a1, a1, 1
 skip12:
     # j = 4
-    lbu     t3, 4(a0)
-    bgeu    t3, t2, skip13
-    addi    t1, t1, 1
+    bgeu    t4, t2, skip13
+    addi    a1, a1, 1
 skip13: 
     # j = 5
-    lbu     t3, 5(a0)
-    bgeu    t3, t2, skip14
-    addi    t1, t1, 1
+    bgeu    t5, t2, skip14
+    addi    a1, a1, 1
 skip14: 
     # j = 6
-    lbu     t3, 6(a0)  
-    bgeu    t3, t2, skip15
-    addi    t1, t1, 1
+    bgeu    t6, t2, skip15
+    addi    a1, a1, 1
 skip15:
-    slli    t3, t0, 2
-    add     t0, t0, t3
-    add     t0, t0, t1
+    add     a1, a0, a1
+    slli    a0, a0, 2
+    add     a0, a0, a1
+
     # i = 3
-    li t1, 0
-    lbu     t2, 3(a0)
+    li      a1, 0
     # j = 4
-    lbu     t3, 4(a0)
-    bgeu    t3, t2, skip16
-    addi    t1, t1, 1
+    bgeu    t4, t3, skip16
+    addi    a1, a1, 1
 skip16: 
     # j = 5
-    lbu     t3, 5(a0)
-    bgeu    t3, t2, skip17
-    addi    t1, t1, 1
+    bgeu    t5, t3, skip17
+    addi    a1, a1, 1
 skip17: 
     # j = 6
-    lbu     t3, 6(a0)  
-    bgeu    t3, t2, skip18
-    addi    t1, t1, 1
+    bgeu    t6, t3, skip18
+    addi    a1, a1, 1
 skip18:
-    slli    t0, t0, 2
-    add     t0, t0, t1
+    slli    a0, a0, 2
+    add     a0, a0, a1
+
     # i = 4
-    li t1, 0
-    lbu     t2, 4(a0)
+    li      a1, 0
     # j = 5
-    lbu     t3, 5(a0)
-    bgeu    t3, t2, skip19
-    addi    t1, t1, 1
+    bgeu    t5, t4, skip19
+    addi    a1, a1, 1
 skip19: 
     # j = 6
-    lbu     t3, 6(a0)  
-    bgeu    t3, t2, skip20
-    addi    t1, t1, 1
+    bgeu    t6, t4, skip20
+    addi    a1, a1, 1
 skip20:
-    slli    t3, t0, 1
-    add     t0, t0, t3
-    add     t0, t0, t1
-    # i = 5
-    li t1, 0
-    lbu     t2, 5(a0)
-    # j = 6
-    lbu     t3, 6(a0)  
-    bgeu    t3, t2, skip21
-    addi    t1, t1, 1
-skip21:
-    slli    t0, t0, 1
-    add     t0, t0, t1
+    add     a1, a0, a1
+    slli    a0, a0, 1
+    add     a0, a0, a1
 
-    mv      a0, t0          # return p
+    # i = 5
+    li      a1, 0
+    # j = 6 
+    bgeu    t6, t5, skip21
+    addi    a1, a1, 1
+skip21:
+    slli    a0, a0, 1       # p << 1
+    add     a0, a0, a1      # (p << 1) + smaller
+
     ret
 
 
@@ -754,9 +723,8 @@ rank_orientation:
     lbu     t1, 12(a0)      # state->o[5]
     slli    t2, t0, 1       # t2 = o << 1
     add     t0, t2, t0      # t0 = (o << 1) + o
-    add     t0, t0, t1      # t0 = (o << 1) + o + o[5]
+    add     a0, t0, t1      # a0 = (o << 1) + o + o[5]
 
-    mv      a0, t0          # return o
     ret
 
 
@@ -898,7 +866,7 @@ valid:
     beq     t0, t1, valid_return
 
 invalid:
-    li a0, 0
+    li      a0, 0
     ret
 
 valid_return:
@@ -1040,23 +1008,30 @@ heuristic_use_o:
     .globl depth_limit_dfs_iterative
 
 depth_limit_dfs_iterative:
-    addi    sp, sp, -224
+    addi    sp, sp, -240    # 16-byte stack alignment
 
     # 要先保存原本的 ra 和 s registers：
-    sw      s6, 192(sp)
-    sw      s5, 196(sp)
-    sw      s4, 200(sp)
-    sw      s3, 204(sp)
-    sw      s2, 208(sp)
-    sw      s1, 212(sp)
-    sw      s0, 216(sp)
-    sw      ra, 220(sp)
+    sw      s8, 192(sp)
+    sw      s7, 196(sp)
+    sw      s6, 200(sp)
+    sw      s5, 204(sp)
+    sw      s4, 208(sp)
+    sw      s3, 212(sp)
+    sw      s2, 216(sp)
+    sw      s1, 220(sp)
+    sw      s0, 224(sp)
+    sw      ra, 228(sp)
 
     mv      s0, sp          # s0 = stack[0] 的位址
     li      s1, 0           # s1 = depth
     mv      s2, a1          # a1 = limit
     mv      s3, a2          # a2 = orientation_table
     mv      s4, a3          # a3 = permutation_table
+
+    # load path
+    la      s7, path        # s7 = path[0]
+    # load move_face[move]
+    la      s8, move_face   # s8 = move_face[0] 
 
     lbu     t0, 0(a0)       # load state[0]
     sb      t0, 0(s0)       # stoe stack[0]
@@ -1105,20 +1080,21 @@ depth_limit_dfs_iterative:
     # while loop
 dfs_loop:
     slli    t0, s1, 4       # depth * 16
-    add     t0, s0, t0      # stack[depth] = s0 + depth*16
+    add     a0, s0, t0      # stack[depth] = s0 + depth*16
     
-    lbu     t1, 14(t0)      # load stack[depth].next_move
+    lbu     t1, 14(a0)      # load stack[depth].next_move
 
     ## if(stack[depth].next_move == 0)
     bne     t1, zero, next_move_bigger_than_MOVES
 
-    mv      a0, t0
+    # mv      a0, t0
     jal     ra, rank_permutation # rank_permutation(&stack[depth].state) 
     mv      s5, a0          # s5 = p
 
     slli    t0, s1, 4
-    add     t0, s0, t0 
-    mv      a0, t0
+    # add     t0, s0, t0 
+    # mv      a0, t0
+    add     a0, s0, t0 
     jal     ra, rank_orientation # rank_orientation(&stack[depth].state)
     mv      s6, a0          # s6 = o
 
@@ -1132,16 +1108,18 @@ dfs_loop:
 
     # restore
 dfs_return:
-    lw      s6, 192(sp)
-    lw      s5, 196(sp)
-    lw      s4, 200(sp)
-    lw      s3, 204(sp)
-    lw      s2, 208(sp)
-    lw      s1, 212(sp)
-    lw      s0, 216(sp)
-    lw      ra, 220(sp)
+    lw      s8, 192(sp)
+    lw      s7, 196(sp)
+    lw      s6, 200(sp)
+    lw      s5, 204(sp)
+    lw      s4, 208(sp)
+    lw      s3, 212(sp)
+    lw      s2, 216(sp)
+    lw      s1, 220(sp)
+    lw      s0, 224(sp)
+    lw      ra, 228(sp)
     
-    addi    sp, sp, 224
+    addi    sp, sp, 240
     
     ret
 
@@ -1158,13 +1136,26 @@ depth_sub_one:
     j       dfs_loop
 
 heuristic_bigger_than_limit:
-    mv      a0, s5
-    mv      a1, s6
-    mv      a2, s3
-    mv      a3, s4
-    jal     ra, heuristic
+    # mv      a0, s5
+    # mv      a1, s6
+    # mv      a2, s3
+    # mv      a3, s4
+    # jal     ra, heuristic
 
-    add     t2, a0, s1      # heuristic + depth
+    # function inlining
+    add     t0, s4, s5      # t0 = permutation_table + p
+    lbu     t0, 0(t0)       # load permutation_table[p]
+
+    add     t1, s3, s6      # t1 = orientation_table + o
+    lbu     t1, 0(t1)       # load orientation_table[o]
+
+    bgeu    t1, t0, use_o   # if t1 >= t0 then heuristic_use_o
+
+    add     t2, t0, s1      # p + depth
+    j       max_p_and_o
+use_o:
+    add     t2, t1, s1      # o + depth
+max_p_and_o:
     bgeu    s2, t2, next_move_bigger_than_MOVES
     bne     s1, zero, depth_sub_one
 
@@ -1184,28 +1175,28 @@ next_move_bigger_than_MOVES:
     j       dfs_return
     
 check_depth_and_move_face:
-    # load stack[depth].next_move
-    slli    t0, s1, 4       # depth * 16
-    add     t0, s0, t0      # t0 = stack[depth] = s0 + depth * 16
-    lbu     t1, 14(t0)      # t1 = stack[depth].next_move
+    # # load stack[depth].next_move
+    # slli    t0, s1, 4       # depth * 16
+    # add     t0, s0, t0      # t0 = stack[depth] = s0 + depth * 16
+    # lbu     t1, 14(t0)      # t1 = stack[depth].next_move 
 
     # load path
-    la      t5, path        # t5 = path[0]
+    # la      t5, path        # t5 = path[0]
 
     beq     s1, zero, dfs_apply_move
 
     # load path[depth - 1]
     addi    t6, s1, -1      # depth - 1
-    add     t6, t5, t6      # path[0] + depth - 1
+    add     t6, s7, t6      # path[0] + depth - 1
     lbu     t6, 0(t6)       # t6 = path[depth - 1]
 
     # load move_face[move]
-    la      t2, move_face   # t2 = move_face[0]
-    add     t3, t2, t1      # move_face[0] + move
+    # la      t2, move_face   # t2 = move_face[0] 
+    add     t3, s8, t1      # move_face[0] + move
     lbu     t3, 0(t3)       # t3 = move_face[move]
 
     # load move_face[path[depth - 1]]
-    add     t4, t2, t6      # move_face[0] + path[depth - 1]
+    add     t4, s8, t6      # move_face[0] + path[depth - 1]
     lbu     t4, 0(t4)       # t4 = move_face[path[depth - 1]]
     
     bne     t3, t4, dfs_apply_move
@@ -1215,16 +1206,18 @@ check_depth_and_move_face:
     j       dfs_loop
 
 dfs_apply_move: 
-    add     t5, t5, s1      # path[0] + depth
+    add     t5, s7, s1      # path[0] + depth
     sb      t1, 0(t5)       # path[depth] = move
 
     mv      a0, t0
     mv      a1, t1
 
-    addi    t0, s1, 1       # depth + 1
-    slli    t0, t0, 4       # (depth + 1) * 16
-    add     t0, s0, t0      # &stack[depth + 1] = s0 + (depth + 1) * 16
-    mv      a2, t0          # a2 = &stack[depth + 1].state
+    # addi    t0, s1, 1       # depth + 1
+    # slli    t0, t0, 4       # (depth + 1) * 16
+    # add     t0, s0, t0      # &stack[depth + 1] = s0 + (depth + 1) * 16
+    # mv      a2, t0          # a2 = &stack[depth + 1].state
+    addi     a2, t0, 16      # t0 = &stack[depth]
+    
     jal     ra, apply_move
 
     slli    t0, s1, 4       # depth * 16
@@ -1235,9 +1228,10 @@ dfs_apply_move:
     sb      t1, 14(t0)      # store stack[depth].next_move
 
     addi    s1, s1, 1       # ++depth
+    # slli    t0, s1, 4       # depth * 16
+    # add     t0, s0, t0      # stack[depth] = s0 + depth * 16
+    addi    t0, t0, 16      # t0 = &stack[depth]
 
-    slli    t0, s1, 4       # depth * 16
-    add     t0, s0, t0      # stack[depth] = s0 + depth * 16
     sb      zero, 14(t0)    # store stack[depth].next_move = 0
 
     j       dfs_loop
@@ -1326,9 +1320,8 @@ loop_for_depth_limit_dfs_iterative:
     j       loop_for_depth_limit_dfs_iterative
 
 print: 
-
     # print
-    li      s0, 0        # i = 0
+    li      s0, 0           # i = 0
     la      s1, solution_depth
     lbu     s1, 0(s1)
 
@@ -1344,9 +1337,9 @@ print_loop:
     add     t3, t3, t2
     lw      t3, 0(t3)
 
-    # 判斷字串長度
-    lbu     t4, 1(t3)
-    beq     t4, zero, print_one_char
+    # # 判斷字串長度
+    # lbu     t4, 1(t3)
+    # beq     t4, zero, print_one_char
 
     # li      a0, 1           # stdout
     # mv      a1, t3          # buffer address
@@ -1358,19 +1351,19 @@ print_loop:
     li      a7, 4
     ecall
 
-    j       next_print_loop
+    # j       next_print_loop
 
-print_one_char:   
-    # li      a0, 1           # stdout
-    # mv      a1, t3          # buffer address
-    # li      a2, 1           # bytes
-    # li      a7, 64          # SYS_write
-    # ecall
+# print_one_char:   
+#     # li      a0, 1           # stdout
+#     # mv      a1, t3          # buffer address
+#     # li      a2, 1           # bytes
+#     # li      a7, 64          # SYS_write
+#     # ecall
 
-    mv      a0, t3
-    li      a7, 4
+#     mv      a0, t3
+#     li      a7, 4
 
-    ecall
+#     ecall
 
 next_print_loop:
 
@@ -1420,4 +1413,3 @@ output_failed:
     li      a0, 0
     li      a7, 10
     ecall
-
